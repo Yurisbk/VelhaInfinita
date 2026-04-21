@@ -1,16 +1,21 @@
 import 'dotenv/config';
 import path from 'path';
+import fs from 'fs';
 import express from 'express';
 import mongoose from 'mongoose';
 import { app, server } from './app';
 
-// ─── Static frontend (production) ─────────────────────────────────────────────
+// ─── Static frontend (production, monolith only) ──────────────────────────────
+// Only active when the client build exists alongside the server (monolith deploy).
+// On Render + Vercel (separate deploys) this folder won't exist and is skipped.
 if (process.env.NODE_ENV === 'production') {
   const clientDist = path.join(__dirname, '../../client/dist');
-  app.use(express.static(clientDist));
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(clientDist, 'index.html'));
-  });
+  if (fs.existsSync(clientDist)) {
+    app.use(express.static(clientDist));
+    app.get('*', (_req, res) => {
+      res.sendFile(path.join(clientDist, 'index.html'));
+    });
+  }
 }
 
 // ─── MongoDB + Start ──────────────────────────────────────────────────────────
