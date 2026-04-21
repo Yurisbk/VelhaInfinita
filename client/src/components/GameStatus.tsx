@@ -4,7 +4,7 @@ import { GameState } from '../utils/gameLogic';
 interface GameStatusProps {
   state: GameState;
   playerLabel?: { X: string; O: string };
-  onReset: () => void;
+  onReset?: () => void;
 }
 
 export default function GameStatus({
@@ -46,7 +46,7 @@ export default function GameStatus({
         <p className="text-xs sm:text-sm text-orange-400 animate-pulse">{subMessage}</p>
       )}
 
-      {winner && (
+      {winner && onReset && (
         <motion.button
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}

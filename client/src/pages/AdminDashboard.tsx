@@ -17,9 +17,20 @@ interface MongoData {
   recentGames: { mode: string; winner: string; durationSeconds: number; createdAt: string }[];
 }
 
+interface AccessEntry {
+  anonymizedIp: string;
+  country: string | null;
+  city: string | null;
+  region: string | null;
+  timestamp: string;
+  route: string;
+  method: string;
+}
+
 interface DashboardData {
   prometheus: PrometheusData;
   mongo: MongoData;
+  recentAccesses: AccessEntry[];
 }
 
 const SESSION_KEY = 'ttt_admin_pw';
@@ -324,6 +335,50 @@ export default function AdminDashboard() {
               />
             </div>
           </section>
+
+          {/* ── Acessos Recentes (IPs) ────────────────────────────── */}
+          {data.recentAccesses && data.recentAccesses.length > 0 && (
+            <section>
+              <h2 className="text-sm font-bold text-white/40 uppercase tracking-widest mb-3">
+                Acessos Recentes
+              </h2>
+              <div className="card overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-white/30 text-xs border-b border-white/10">
+                      <th className="text-left pb-2 pr-4">IP (anonimizado)</th>
+                      <th className="text-left pb-2 pr-4">País</th>
+                      <th className="text-left pb-2 pr-4">Cidade / Região</th>
+                      <th className="text-left pb-2 pr-4">Rota</th>
+                      <th className="text-left pb-2">Horário</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {data.recentAccesses.slice(0, 50).map((entry, i) => (
+                      <tr key={i} className="text-xs">
+                        <td className="py-2 pr-4 font-mono text-cyan-300/80">
+                          {entry.anonymizedIp}
+                        </td>
+                        <td className="py-2 pr-4 text-white/60">
+                          {entry.country ?? '—'}
+                        </td>
+                        <td className="py-2 pr-4 text-white/50">
+                          {[entry.city, entry.region].filter(Boolean).join(', ') || '—'}
+                        </td>
+                        <td className="py-2 pr-4 text-white/40 font-mono">
+                          <span className="text-white/30">{entry.method} </span>
+                          {entry.route}
+                        </td>
+                        <td className="py-2 text-white/30">
+                          {new Date(entry.timestamp).toLocaleString('pt-BR')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
         </motion.div>
       )}
     </div>

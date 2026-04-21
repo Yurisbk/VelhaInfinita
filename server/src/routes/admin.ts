@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { register } from '../utils/metrics';
 import { GameRecord } from '../models/GameRecord';
+import { getRecentAccesses } from '../middleware/ipMiddleware';
 
 const router = Router();
 
@@ -91,7 +92,9 @@ router.get('/dashboard', requireAdmin, async (_req: Request, res: Response): Pro
       // MongoDB offline — retorna só as métricas do Prometheus
     }
 
-    res.json({ prometheus: prometheusData, mongo: mongoData });
+    const recentAccesses = getRecentAccesses(100);
+
+    res.json({ prometheus: prometheusData, mongo: mongoData, recentAccesses });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Erro ao coletar métricas.' });

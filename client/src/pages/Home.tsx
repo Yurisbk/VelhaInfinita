@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { useAuth } from '../context/AuthContext';
+import { usePlayer } from '../context/PlayerContext';
 
 const modes = [
   {
@@ -12,10 +12,18 @@ const modes = [
     glow: 'shadow-indigo-500/30',
   },
   {
+    to: '/partida-rapida',
+    emoji: '⚡',
+    title: 'Partida Rápida',
+    desc: 'Seja pareado com um jogador aleatório',
+    color: 'from-yellow-500 to-orange-500',
+    glow: 'shadow-yellow-500/30',
+  },
+  {
     to: '/online',
     emoji: '🌐',
-    title: 'Online',
-    desc: 'Jogue com amigos em dispositivos diferentes',
+    title: 'Online com Amigo',
+    desc: 'Crie ou entre em uma sala com código',
     color: 'from-cyan-600 to-blue-600',
     glow: 'shadow-cyan-500/30',
   },
@@ -39,7 +47,7 @@ const item = {
 };
 
 export default function Home() {
-  const { user } = useAuth();
+  const { playerName } = usePlayer();
 
   return (
     <div className="min-h-[calc(100vh-60px)] flex flex-col items-center justify-center px-4 py-12">
@@ -56,9 +64,9 @@ export default function Home() {
           Cada jogador tem apenas <span className="text-white font-semibold">3 peças</span>.
           Na 4ª jogada, a mais antiga desaparece. Nunca empata!
         </p>
-        {user && (
+        {playerName && (
           <p className="text-primary mt-4 font-semibold">
-            Bem-vindo de volta, {user.username}! 👋
+            Bem-vindo, {playerName}! 👋
           </p>
         )}
       </motion.div>
@@ -67,7 +75,7 @@ export default function Home() {
         variants={container}
         initial="hidden"
         animate="show"
-        className="grid gap-4 w-full max-w-2xl grid-cols-1 sm:grid-cols-3"
+        className="grid gap-4 w-full max-w-2xl grid-cols-1 sm:grid-cols-2"
       >
         {modes.map((mode) => (
           <motion.div key={mode.to} variants={item}>

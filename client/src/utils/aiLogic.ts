@@ -1,12 +1,22 @@
 import {
   GameState,
   Player,
+  Cell,
   applyMove,
   checkWinner,
   getValidMoves,
 } from './gameLogic';
 
-export type Difficulty = 'easy' | 'medium' | 'hard';
+export type Difficulty = 'easy' | 'medium' | 'hard' | 'insane';
+
+const WIN_COMBOS: [number, number, number][] = [
+  [0, 1, 2], [3, 4, 5], [6, 7, 8],
+  [0, 3, 6], [1, 4, 7], [2, 5, 8],
+  [0, 4, 8], [2, 4, 6],
+];
+
+/** Positional weights: center > corners > edges */
+const POSITION_WEIGHTS = [3, 2, 3, 2, 4, 2, 3, 2, 3];
 
 /** Pick a random valid move. */
 function randomMove(state: GameState): number {
@@ -15,18 +25,51 @@ function randomMove(state: GameState): number {
 }
 
 /**
- * Score a terminal state from the perspective of `maximizingPlayer`.
- * +10 = maximizingPlayer wins, -10 = opponent wins, 0 = ongoing
+ * Heuristic evaluation of a non-terminal board state.
+ * Scores lines as: 2-in-a-row open = +/- lineWeight, positional bonus.
+ * aggressiveness controls how much threat lines are weighted.
  */
-function scoreState(state: GameState, maximizingPlayer: Player): number {
-  if (state.winner === maximizingPlayer) return 10;
-  if (state.winner !== null) return -10;
+function evaluateBoard(board: Cell[], aiPlayer: Player, aggressiveness: number): number {
+  const opponent: Player = aiPlayer === 'X' ? 'O' : 'X';
+  let score = 0;
+
+  for (const [a, b, c] of WIN_COMBOS) {
+    const cells = [board[a], board[b], board[c]];
+    const aiCount = cells.filter((v) => v === aiPlayer).length;
+    const oppCount = cells.filter((v) => v === opponent).length;
+
+    if (aiCount > 0 && oppCount === 0) {
+      score += aiCount === 2 ? aggressiveness * 2 : aggressiveness;
+    } else if (oppCount > 0 && aiCount === 0) {
+      score -= oppCount === 2 ? aggressiveness * 2 : aggressiveness;
+    }
+  }
+
+  for (let i = 0; i < 9; i++) {
+    if (board[i] === aiPlayer) score += POSITION_WEIGHTS[i];
+    else if (board[i] === opponent) score -= POSITION_WEIGHTS[i];
+  }
+
+  return score;
+}
+
+/**
+ * Terminal score: adjusted by depth to prefer faster wins.
+ * aggressiveness amplifies terminal scores for insane mode.
+ */
+function scoreState(
+  state: GameState,
+  maximizingPlayer: Player,
+  depth: number,
+  aggressiveness: number,
+): number {
+  if (state.winner === maximizingPlayer) return (100 + depth) * aggressiveness;
+  if (state.winner !== null) return -(100 + depth) * aggressiveness;
   return 0;
 }
 
 /**
- * Minimax with alpha-beta pruning.
- * Returns the best score for `currentMinimax` player.
+ * Minimax with alpha-beta pruning and heuristic evaluation at leaf nodes.
  */
 function minimax(
   state: GameState,
@@ -35,9 +78,11 @@ function minimax(
   beta: number,
   isMaximizing: boolean,
   aiPlayer: Player,
+  aggressiveness: number,
 ): number {
-  const score = scoreState(state, aiPlayer);
-  if (score !== 0 || depth === 0) return score;
+  const terminal = scoreState(state, aiPlayer, depth, aggressiveness);
+  if (terminal !== 0) return terminal;
+  if (depth === 0) return evaluateBoard(state.board, aiPlayer, aggressiveness);
 
   const moves = getValidMoves(state);
   if (moves.length === 0) return 0;
@@ -46,7 +91,10 @@ function minimax(
     let best = -Infinity;
     for (const move of moves) {
       const next = applyMove(state, move);
-      best = Math.max(best, minimax(next, depth - 1, alpha, beta, false, aiPlayer));
+      best = Math.max(
+        best,
+        minimax(next, depth - 1, alpha, beta, false, aiPlayer, aggressiveness),
+      );
       alpha = Math.max(alpha, best);
       if (beta <= alpha) break;
     }
@@ -55,7 +103,10 @@ function minimax(
     let best = Infinity;
     for (const move of moves) {
       const next = applyMove(state, move);
-      best = Math.min(best, minimax(next, depth - 1, alpha, beta, true, aiPlayer));
+      best = Math.min(
+        best,
+        minimax(next, depth - 1, alpha, beta, true, aiPlayer, aggressiveness),
+      );
       beta = Math.min(beta, best);
       if (beta <= alpha) break;
     }
@@ -64,15 +115,19 @@ function minimax(
 }
 
 /** Find the best move using minimax at a given depth. */
-function bestMove(state: GameState, depth: number): number {
+function bestMove(state: GameState, depth: number, aggressiveness: number): number {
   const aiPlayer = state.currentPlayer;
   const moves = getValidMoves(state);
-  let bestScore = -Infinity;
-  let best = moves[0];
 
-  for (const move of moves) {
+  // Sort moves: center and corners first to improve pruning
+  const sorted = [...moves].sort((a, b) => POSITION_WEIGHTS[b] - POSITION_WEIGHTS[a]);
+
+  let bestScore = -Infinity;
+  let best = sorted[0];
+
+  for (const move of sorted) {
     const next = applyMove(state, move);
-    const score = minimax(next, depth, -Infinity, Infinity, false, aiPlayer);
+    const score = minimax(next, depth, -Infinity, Infinity, false, aiPlayer, aggressiveness);
     if (score > bestScore) {
       bestScore = score;
       best = move;
@@ -93,13 +148,11 @@ function mediumMove(state: GameState): number {
   const opponent: Player = aiPlayer === 'X' ? 'O' : 'X';
   const moves = getValidMoves(state);
 
-  // Can we win immediately?
   for (const move of moves) {
     const next = applyMove(state, move);
     if (next.winner === aiPlayer) return move;
   }
 
-  // Can opponent win next? Block them.
   for (const move of moves) {
     const testBoard = [...state.board];
     testBoard[move] = opponent;
@@ -119,7 +172,9 @@ export function chooseMove(state: GameState, difficulty: Difficulty): number {
       return mediumMove(state);
 
     case 'hard':
-      // Depth 6 is ample for infinite tic-tac-toe (bounded state space)
-      return bestMove(state, 6);
+      return bestMove(state, 9, 1);
+
+    case 'insane':
+      return bestMove(state, 12, 2);
   }
 }

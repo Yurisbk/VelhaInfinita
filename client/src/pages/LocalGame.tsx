@@ -1,11 +1,41 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Board from '../components/Board';
 import GameStatus from '../components/GameStatus';
+import PlayerSetup, { PlayerConfig } from '../components/PlayerSetup';
 import { useGame } from '../hooks/useGame';
 
 export default function LocalGame() {
   const { state, move, reset } = useGame();
+  const [config, setConfig] = useState<PlayerConfig | null>(null);
+
+  function handleConfig(cfg: PlayerConfig) {
+    setConfig(cfg);
+    reset();
+  }
+
+  if (!config) {
+    return (
+      <div className="min-h-[calc(100vh-60px)] flex flex-col items-center justify-center px-4 py-8 gap-6">
+        <motion.h1
+          className="text-2xl font-black text-center"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          👥 Dois Jogadores
+        </motion.h1>
+        <PlayerSetup
+          mode="local"
+          onConfirm={handleConfig}
+          onBack={() => window.history.back()}
+        />
+      </div>
+    );
+  }
+
+  const labelX = config.player1Name;
+  const labelO = config.player2Name ?? 'Jogador 2';
 
   return (
     <div className="min-h-[calc(100vh-60px)] flex flex-col items-center justify-center px-4 py-8 gap-6">
@@ -14,7 +44,7 @@ export default function LocalGame() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        👥 Dois Jogadores
+        👥 {labelX} vs {labelO}
       </motion.h1>
 
       <motion.div
@@ -24,14 +54,17 @@ export default function LocalGame() {
       >
         <GameStatus
           state={state}
-          playerLabel={{ X: 'Jogador X', O: 'Jogador O' }}
-          onReset={reset}
+          playerLabel={{ X: labelX, O: labelO }}
+          onReset={() => { reset(); }}
         />
         <Board state={state} onMove={move} />
 
         <div className="flex gap-3 justify-center pt-2">
-          <button onClick={reset} className="btn-ghost text-sm">
+          <button onClick={() => { reset(); }} className="btn-ghost text-sm">
             Reiniciar
+          </button>
+          <button onClick={() => setConfig(null)} className="btn-ghost text-sm">
+            Trocar jogadores
           </button>
           <Link to="/" className="btn-ghost text-sm">
             Menu

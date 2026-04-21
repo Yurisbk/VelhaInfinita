@@ -9,13 +9,30 @@ import {
 
 interface Room {
   code: string;
-  players: { socketId: string; symbol: 'X' | 'O' }[];
+  players: { socketId: string; symbol: 'X' | 'O'; name: string }[];
   state: GameState;
   startedAt: number;
   moves: number[];
+  rematchVotes: Set<string>;
+  rematchTimeout?: ReturnType<typeof setTimeout>;
 }
 
 const rooms = new Map<string, Room>();
+
+/** Tracks which room a socket currently belongs to (works across quickmatch matching) */
+const socketRoomMap = new Map<string, string>();
+
+interface QueueEntry {
+  socketId: string;
+  name: string;
+}
+
+const matchmakingQueue: QueueEntry[] = [];
+
+function removeFromQueue(socketId: string): void {
+  const idx = matchmakingQueue.findIndex((e) => e.socketId === socketId);
+  if (idx !== -1) matchmakingQueue.splice(idx, 1);
+}
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -31,28 +48,52 @@ function cleanRoom(code: string): void {
   activeGameRooms.dec();
 }
 
+function handleLeaveRoom(io: Server, socket: Socket, code: string, isWin: boolean): void {
+  const room = rooms.get(code);
+  if (!room) return;
+  clearTimeout(room.rematchTimeout);
+  const remaining = room.players.find((p) => p.socketId !== socket.id);
+  const winner = remaining?.symbol ?? null;
+  socket.to(code).emit('opponent_left', { winner });
+
+  if (winner && !isWin) {
+    const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);
+    gamesWonTotal.inc({ mode: 'online', winner });
+    GameRecord.create({
+      mode: 'online',
+      winner,
+      moves: room.moves,
+      durationSeconds,
+    }).catch(console.error);
+  }
+
+  cleanRoom(code);
+}
+
 export function registerGameSocket(io: Server): void {
   io.on('connection', (socket: Socket) => {
-    let currentRoom: string | null = null;
+    let inQueue = false;
 
-    socket.on('create_room', () => {
+    socket.on('create_room', ({ name }: { name?: string } = {}) => {
       const code = generateRoomCode();
       const room: Room = {
         code,
-        players: [{ socketId: socket.id, symbol: 'X' }],
+        players: [{ socketId: socket.id, symbol: 'X', name: name?.trim() || 'Jogador 1' }],
         state: createInitialState(),
         startedAt: Date.now(),
         moves: [],
+        rematchVotes: new Set(),
       };
       rooms.set(code, room);
       activeGameRooms.inc();
       socket.join(code);
-      currentRoom = code;
+      socketRoomMap.set(socket.id, code);
       socket.emit('room_created', code);
     });
 
-    socket.on('join_room', (code: string) => {
-      const room = rooms.get(code?.toUpperCase());
+    socket.on('join_room', ({ code, name }: { code: string; name?: string }) => {
+      const upperCode = code?.toUpperCase();
+      const room = rooms.get(upperCode);
       if (!room) {
         socket.emit('error', 'Sala não encontrada.');
         return;
@@ -62,19 +103,21 @@ export function registerGameSocket(io: Server): void {
         return;
       }
 
-      room.players.push({ socketId: socket.id, symbol: 'O' });
-      socket.join(code.toUpperCase());
-      currentRoom = code.toUpperCase();
+      const joinerName = name?.trim() || 'Jogador 2';
+      room.players.push({ socketId: socket.id, symbol: 'O', name: joinerName });
+      socket.join(upperCode);
+      socketRoomMap.set(socket.id, upperCode);
 
-      io.to(room.players[0].socketId).emit('opponent_joined');
-      io.to(room.players[0].socketId).emit('game_start', { symbol: 'X' });
-      socket.emit('game_start', { symbol: 'O' });
+      io.to(room.players[0].socketId).emit('opponent_joined', { opponentName: joinerName });
+      io.to(room.players[0].socketId).emit('game_start', { symbol: 'X', opponentName: joinerName });
+      socket.emit('game_start', { symbol: 'O', opponentName: room.players[0].name });
 
       gamesStartedTotal.inc({ mode: 'online' });
-      io.to(currentRoom).emit('game_update', room.state);
+      io.to(upperCode).emit('game_update', room.state);
     });
 
     socket.on('make_move', (index: number) => {
+      const currentRoom = socketRoomMap.get(socket.id);
       if (!currentRoom) return;
       const room = rooms.get(currentRoom);
       if (!room) return;
@@ -107,57 +150,127 @@ export function registerGameSocket(io: Server): void {
           durationSeconds,
         }).catch(console.error);
 
-        cleanRoom(currentRoom);
-        currentRoom = null;
+        room.rematchVotes = new Set();
+      }
+    });
+
+    socket.on('request_rematch', () => {
+      const currentRoom = socketRoomMap.get(socket.id);
+      if (!currentRoom) return;
+      const room = rooms.get(currentRoom);
+      if (!room || !room.state.winner) return;
+
+      room.rematchVotes.add(socket.id);
+
+      if (room.rematchVotes.size === 1) {
+        socket.to(currentRoom).emit('rematch_requested');
+        room.rematchTimeout = setTimeout(() => {
+          if (rooms.has(currentRoom)) {
+            room.rematchVotes.clear();
+            io.to(currentRoom).emit('rematch_expired');
+          }
+        }, 30000);
+        return;
+      }
+
+      if (room.rematchVotes.size >= 2) {
+        clearTimeout(room.rematchTimeout);
+        room.state = createInitialState();
+        room.moves = [];
+        room.startedAt = Date.now();
+        room.rematchVotes = new Set();
+
+        for (const p of room.players) {
+          const opponent = room.players.find((o) => o.socketId !== p.socketId);
+          io.to(p.socketId).emit('game_start', { symbol: p.symbol, opponentName: opponent?.name });
+        }
+        gamesStartedTotal.inc({ mode: 'online' });
+        io.to(currentRoom).emit('game_update', room.state);
+      }
+    });
+
+    socket.on('join_queue', ({ name }: { name?: string } = {}) => {
+      const currentRoom = socketRoomMap.get(socket.id);
+      if (inQueue || currentRoom) return;
+
+      const playerName = name?.trim() || 'Jogador';
+      inQueue = true;
+
+      if (matchmakingQueue.length > 0) {
+        const opponent = matchmakingQueue.shift()!;
+        inQueue = false;
+
+        const code = generateRoomCode();
+        const room: Room = {
+          code,
+          players: [
+            { socketId: opponent.socketId, symbol: 'X', name: opponent.name },
+            { socketId: socket.id, symbol: 'O', name: playerName },
+          ],
+          state: createInitialState(),
+          startedAt: Date.now(),
+          moves: [],
+          rematchVotes: new Set(),
+        };
+        rooms.set(code, room);
+        activeGameRooms.inc();
+
+        const opponentSocket = io.sockets.sockets.get(opponent.socketId);
+        if (opponentSocket) {
+          opponentSocket.join(code);
+          socketRoomMap.set(opponent.socketId, code);
+        }
+        socket.join(code);
+        socketRoomMap.set(socket.id, code);
+
+        io.to(opponent.socketId).emit('game_start', { symbol: 'X', opponentName: playerName });
+        socket.emit('game_start', { symbol: 'O', opponentName: opponent.name });
+        gamesStartedTotal.inc({ mode: 'quickmatch' });
+        io.to(code).emit('game_update', room.state);
+      } else {
+        matchmakingQueue.push({ socketId: socket.id, name: playerName });
+        socket.emit('queue_joined', { position: matchmakingQueue.length });
+
+        const timeout = setTimeout(() => {
+          if (inQueue) {
+            removeFromQueue(socket.id);
+            inQueue = false;
+            socket.emit('queue_timeout');
+          }
+        }, 60000);
+
+        socket.once('leave_queue', () => {
+          clearTimeout(timeout);
+          removeFromQueue(socket.id);
+          inQueue = false;
+          socket.emit('queue_left');
+        });
       }
     });
 
     socket.on('leave_room', () => {
+      const currentRoom = socketRoomMap.get(socket.id);
       if (!currentRoom) return;
       const room = rooms.get(currentRoom);
       if (room) {
-        const remaining = room.players.find((p) => p.socketId !== socket.id);
-        const winner = remaining?.symbol ?? null;
-        socket.to(currentRoom).emit('opponent_left', { winner });
-
-        if (winner) {
-          const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);
-          gamesWonTotal.inc({ mode: 'online', winner });
-          GameRecord.create({
-            mode: 'online',
-            winner,
-            moves: room.moves,
-            durationSeconds,
-          }).catch(console.error);
-        }
-
-        cleanRoom(currentRoom);
+        handleLeaveRoom(io, socket, currentRoom, !!room.state.winner);
       }
       socket.leave(currentRoom);
-      currentRoom = null;
+      socketRoomMap.delete(socket.id);
     });
 
     socket.on('disconnect', () => {
+      if (inQueue) {
+        removeFromQueue(socket.id);
+        inQueue = false;
+      }
+      const currentRoom = socketRoomMap.get(socket.id);
       if (!currentRoom) return;
       const room = rooms.get(currentRoom);
       if (room) {
-        const remaining = room.players.find((p) => p.socketId !== socket.id);
-        const winner = remaining?.symbol ?? null;
-        socket.to(currentRoom).emit('opponent_left', { winner });
-
-        if (winner) {
-          const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);
-          gamesWonTotal.inc({ mode: 'online', winner });
-          GameRecord.create({
-            mode: 'online',
-            winner,
-            moves: room.moves,
-            durationSeconds,
-          }).catch(console.error);
-        }
-
-        cleanRoom(currentRoom);
+        handleLeaveRoom(io, socket, currentRoom, !!room.state.winner);
       }
+      socketRoomMap.delete(socket.id);
     });
   });
 }

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import Board from '../components/Board';
 import GameStatus from '../components/GameStatus';
+import PlayerSetup, { PlayerConfig } from '../components/PlayerSetup';
 import { useGame } from '../hooks/useGame';
 import { chooseMove, Difficulty } from '../utils/aiLogic';
 
@@ -10,24 +11,29 @@ const DIFFICULTIES: { value: Difficulty; label: string; color: string }[] = [
   { value: 'easy', label: 'Fácil', color: 'bg-green-600 hover:bg-green-500' },
   { value: 'medium', label: 'Médio', color: 'bg-yellow-600 hover:bg-yellow-500' },
   { value: 'hard', label: 'Difícil', color: 'bg-red-600 hover:bg-red-500' },
+  { value: 'insane', label: 'Insano', color: 'bg-purple-800 hover:bg-purple-700' },
 ];
 
 export default function CPUGame() {
+  const [config, setConfig] = useState<PlayerConfig | null>(null);
   const [difficulty, setDifficulty] = useState<Difficulty | null>(null);
   const [cpuThinking, setCpuThinking] = useState(false);
   const { state, move, reset } = useGame();
 
+  const humanSymbol = config?.mySymbol ?? 'X';
+  const cpuSymbol = humanSymbol === 'X' ? 'O' : 'X';
+
   const handleMove = useCallback(
     (index: number) => {
-      if (state.currentPlayer !== 'X' || state.winner) return;
+      if (state.currentPlayer !== humanSymbol || state.winner) return;
       move(index);
     },
-    [state, move],
+    [state, move, humanSymbol],
   );
 
   useEffect(() => {
-    if (!difficulty) return;
-    if (state.currentPlayer !== 'O' || state.winner) return;
+    if (!difficulty || !config) return;
+    if (state.currentPlayer !== cpuSymbol || state.winner) return;
 
     setCpuThinking(true);
     const timer = setTimeout(() => {
@@ -37,7 +43,31 @@ export default function CPUGame() {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [state, difficulty, move]);
+  }, [state, difficulty, move, cpuSymbol, config]);
+
+  function handleConfig(cfg: PlayerConfig) {
+    setConfig(cfg);
+    reset();
+  }
+
+  if (!config) {
+    return (
+      <div className="min-h-[calc(100vh-60px)] flex flex-col items-center justify-center px-4 py-8 gap-6">
+        <motion.h1
+          className="text-2xl font-black"
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          🤖 vs CPU
+        </motion.h1>
+        <PlayerSetup
+          mode="cpu"
+          onConfirm={handleConfig}
+          onBack={() => window.history.back()}
+        />
+      </div>
+    );
+  }
 
   if (!difficulty) {
     return (
@@ -48,7 +78,7 @@ export default function CPUGame() {
           animate={{ opacity: 1, y: 0 }}
         >
           <h1 className="text-2xl font-black">🤖 vs CPU</h1>
-          <p className="text-white/60 text-sm">Você é o X. Escolha a dificuldade:</p>
+          <p className="text-white/60 text-sm">Escolha a dificuldade:</p>
 
           <div className="space-y-3">
             {DIFFICULTIES.map((d) => (
@@ -62,19 +92,19 @@ export default function CPUGame() {
             ))}
           </div>
 
-          <Link to="/" className="btn-ghost block w-full text-center text-sm">
-            Voltar
-          </Link>
+          <button onClick={() => setConfig(null)} className="btn-ghost block w-full text-center text-sm">
+            ← Voltar
+          </button>
         </motion.div>
       </div>
     );
   }
 
   const diffLabel = DIFFICULTIES.find((d) => d.value === difficulty)!.label;
-
-  function handleReset() {
-    reset();
-  }
+  const playerLabel = {
+    [humanSymbol]: `${config.player1Name} (${humanSymbol})`,
+    [cpuSymbol]: `CPU (${cpuSymbol}) — ${diffLabel}`,
+  } as { X: string; O: string };
 
   return (
     <div className="min-h-[calc(100vh-60px)] flex flex-col items-center justify-center px-4 py-8 gap-6">
@@ -102,17 +132,17 @@ export default function CPUGame() {
 
         <GameStatus
           state={state}
-          playerLabel={{ X: 'Você (X)', O: `CPU (O) — ${diffLabel}` }}
-          onReset={handleReset}
+          playerLabel={playerLabel}
+          onReset={() => { reset(); }}
         />
         <Board
           state={state}
           onMove={handleMove}
-          disabled={state.currentPlayer === 'O' || cpuThinking}
+          disabled={state.currentPlayer === cpuSymbol || cpuThinking}
         />
 
         <div className="flex flex-col sm:flex-row flex-wrap gap-3 justify-center pt-2">
-          <button onClick={handleReset} className="btn-ghost text-sm w-full sm:w-auto">
+          <button onClick={() => { reset(); }} className="btn-ghost text-sm w-full sm:w-auto">
             Reiniciar
           </button>
           <button
@@ -123,6 +153,16 @@ export default function CPUGame() {
             className="btn-ghost text-sm w-full sm:w-auto"
           >
             Mudar dificuldade
+          </button>
+          <button
+            onClick={() => {
+              reset();
+              setConfig(null);
+              setDifficulty(null);
+            }}
+            className="btn-ghost text-sm w-full sm:w-auto"
+          >
+            Mudar símbolo
           </button>
           <Link to="/" className="btn-ghost text-sm text-center w-full sm:w-auto">
             Menu

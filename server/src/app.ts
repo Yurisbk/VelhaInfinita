@@ -3,15 +3,14 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import passport from 'passport';
 import { Server as SocketIOServer } from 'socket.io';
 import http from 'http';
 
-import authRouter from './routes/auth';
 import statsRouter from './routes/stats';
 import adminRouter from './routes/admin';
 import { registerGameSocket } from './sockets/gameSocket';
 import { metricsMiddleware } from './middleware/metricsMiddleware';
+import { ipMiddleware } from './middleware/ipMiddleware';
 import { register, activeSocketConnections } from './utils/metrics';
 
 export const app = express();
@@ -42,17 +41,6 @@ const globalLimiter = rateLimit({
   message: { message: 'Muitas requisições. Tente novamente em 1 minuto.' },
 });
 
-/** Auth-specific: 5 attempts per minute — brute-force protection.
- *  skipSuccessfulRequests: true means only failed attempts count toward the limit. */
-const authLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: IS_TEST ? 10_000 : 5,
-  skipSuccessfulRequests: true,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { message: 'Muitas tentativas de login. Tente novamente em 1 minuto.' },
-});
-
 /** Admin dashboard: 20 req/min to support auto-refresh every 15 s */
 const adminLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -75,16 +63,13 @@ app.use(
   }),
 );
 app.use(express.json({ limit: '16kb' }));
-app.use(passport.initialize());
 app.use(metricsMiddleware);
+app.use(ipMiddleware);
 
 // Apply global limiter to all routes
 app.use(globalLimiter);
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/register', authLimiter);
-app.use('/api/auth', authRouter);
 app.use('/api/stats', statsRouter);
 app.use('/api/admin', adminLimiter, adminRouter);
 
