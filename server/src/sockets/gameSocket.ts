@@ -116,7 +116,21 @@ export function registerGameSocket(io: Server): void {
       if (!currentRoom) return;
       const room = rooms.get(currentRoom);
       if (room) {
-        socket.to(currentRoom).emit('opponent_left');
+        const remaining = room.players.find((p) => p.socketId !== socket.id);
+        const winner = remaining?.symbol ?? null;
+        socket.to(currentRoom).emit('opponent_left', { winner });
+
+        if (winner) {
+          const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);
+          gamesWonTotal.inc({ mode: 'online', winner });
+          GameRecord.create({
+            mode: 'online',
+            winner,
+            moves: room.moves,
+            durationSeconds,
+          }).catch(console.error);
+        }
+
         cleanRoom(currentRoom);
       }
       socket.leave(currentRoom);
@@ -127,7 +141,21 @@ export function registerGameSocket(io: Server): void {
       if (!currentRoom) return;
       const room = rooms.get(currentRoom);
       if (room) {
-        socket.to(currentRoom).emit('opponent_left');
+        const remaining = room.players.find((p) => p.socketId !== socket.id);
+        const winner = remaining?.symbol ?? null;
+        socket.to(currentRoom).emit('opponent_left', { winner });
+
+        if (winner) {
+          const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);
+          gamesWonTotal.inc({ mode: 'online', winner });
+          GameRecord.create({
+            mode: 'online',
+            winner,
+            moves: room.moves,
+            durationSeconds,
+          }).catch(console.error);
+        }
+
         cleanRoom(currentRoom);
       }
     });

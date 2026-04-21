@@ -51,8 +51,13 @@ export default function OnlineGame() {
       if (state.winner) setPhase('ended');
     });
 
-    s.on('opponent_left', () => {
-      setStatusMsg('Oponente saiu da sala.');
+    s.on('opponent_left', ({ winner }: { winner: 'X' | 'O' | null }) => {
+      if (winner) {
+        setGameState((prev) => ({ ...prev, winner }));
+        setStatusMsg('🏆 Oponente saiu — você venceu!');
+      } else {
+        setStatusMsg('Oponente saiu da sala.');
+      }
       setPhase('ended');
     });
 

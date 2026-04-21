@@ -62,7 +62,7 @@ export default function CPUGame() {
             ))}
           </div>
 
-          <Link to="/" className="btn-ghost w-full text-sm">
+          <Link to="/" className="btn-ghost block w-full text-center text-sm">
             Voltar
           </Link>
         </motion.div>
