@@ -1,6 +1,16 @@
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { usePlayer } from '../context/PlayerContext';
+
+const API_BASE = import.meta.env.VITE_API_URL ?? '';
+
+interface PlayerStats {
+  elo: number;
+  rankedWins: number;
+  rankedLosses: number;
+  name: string;
+}
 
 const modes = [
   {
@@ -18,6 +28,14 @@ const modes = [
     desc: 'Seja pareado com um jogador aleatório',
     color: 'from-yellow-500 to-orange-500',
     glow: 'shadow-yellow-500/30',
+  },
+  {
+    to: '/ranqueado',
+    emoji: '🏆',
+    title: 'Ranqueado',
+    desc: 'Suba no ranking — ELO em jogo',
+    color: 'from-amber-500 to-yellow-400',
+    glow: 'shadow-amber-500/30',
   },
   {
     to: '/online',
@@ -47,7 +65,16 @@ const item = {
 };
 
 export default function Home() {
-  const { playerName } = usePlayer();
+  const { playerName, playerId } = usePlayer();
+  const [stats, setStats] = useState<PlayerStats | null>(null);
+
+  useEffect(() => {
+    if (!playerId) return;
+    fetch(`${API_BASE}/api/player/${playerId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: PlayerStats | null) => { if (data) setStats(data); })
+      .catch(() => {});
+  }, [playerId]);
 
   return (
     <div className="min-h-[calc(100vh-60px)] flex flex-col items-center justify-center px-4 py-12">
@@ -91,11 +118,42 @@ export default function Home() {
         ))}
       </motion.div>
 
+      {/* ELO Stats Bar */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        className="mt-8 card max-w-md w-full"
+      >
+        {stats ? (
+          <div className="flex items-center justify-around text-center">
+            <div>
+              <p className="text-2xl font-black text-yellow-400">{stats.elo}</p>
+              <p className="text-white/50 text-xs mt-1">ELO</p>
+            </div>
+            <div className="w-px h-8 bg-white/10" />
+            <div>
+              <p className="text-2xl font-black text-green-400">{stats.rankedWins}</p>
+              <p className="text-white/50 text-xs mt-1">Vitórias</p>
+            </div>
+            <div className="w-px h-8 bg-white/10" />
+            <div>
+              <p className="text-2xl font-black text-red-400">{stats.rankedLosses}</p>
+              <p className="text-white/50 text-xs mt-1">Derrotas</p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-white/30 text-sm text-center">
+            Jogue uma partida ranqueada para ver seu ELO aqui.
+          </p>
+        )}
+      </motion.div>
+
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
-        className="mt-12 card max-w-md w-full text-center text-white/60 text-sm"
+        transition={{ delay: 0.6 }}
+        className="mt-6 card max-w-md w-full text-center text-white/60 text-sm"
       >
         <p className="font-semibold text-white mb-2">📖 Como funciona</p>
         <ol className="text-left space-y-1 list-decimal list-inside">

@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const metrics_1 = require("../utils/metrics");
 const GameRecord_1 = require("../models/GameRecord");
+const ipMiddleware_1 = require("../middleware/ipMiddleware");
 const router = (0, express_1.Router)();
 /**
  * Middleware: verifica o cabeçalho "x-admin-password" contra ADMIN_PASSWORD do env.
@@ -74,7 +75,8 @@ router.get('/dashboard', requireAdmin, async (_req, res) => {
         catch {
             // MongoDB offline — retorna só as métricas do Prometheus
         }
-        res.json({ prometheus: prometheusData, mongo: mongoData });
+        const recentAccesses = (0, ipMiddleware_1.getRecentAccesses)(100);
+        res.json({ prometheus: prometheusData, mongo: mongoData, recentAccesses });
     }
     catch (err) {
         console.error(err);

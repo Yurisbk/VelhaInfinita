@@ -2,9 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const GameRecord_1 = require("../models/GameRecord");
-const authMiddleware_1 = require("../middleware/authMiddleware");
 const router = (0, express_1.Router)();
-router.get('/', authMiddleware_1.optionalAuth, async (_req, res) => {
+router.get('/', async (_req, res) => {
     try {
         const [totalGames, byMode, byWinner] = await Promise.all([
             GameRecord_1.GameRecord.countDocuments(),

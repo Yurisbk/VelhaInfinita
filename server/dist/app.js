@@ -9,14 +9,14 @@ const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
 const express_rate_limit_1 = __importDefault(require("express-rate-limit"));
-const passport_1 = __importDefault(require("passport"));
 const socket_io_1 = require("socket.io");
 const http_1 = __importDefault(require("http"));
-const auth_1 = __importDefault(require("./routes/auth"));
 const stats_1 = __importDefault(require("./routes/stats"));
 const admin_1 = __importDefault(require("./routes/admin"));
+const player_1 = __importDefault(require("./routes/player"));
 const gameSocket_1 = require("./sockets/gameSocket");
 const metricsMiddleware_1 = require("./middleware/metricsMiddleware");
+const ipMiddleware_1 = require("./middleware/ipMiddleware");
 const metrics_1 = require("./utils/metrics");
 exports.app = (0, express_1.default)();
 exports.server = http_1.default.createServer(exports.app);
@@ -26,6 +26,8 @@ exports.io = new socket_io_1.Server(exports.server, {
         origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
         methods: ['GET', 'POST'],
     },
+    pingInterval: 10000,
+    pingTimeout: 20000,
 });
 exports.io.on('connection', () => metrics_1.activeSocketConnections.inc());
 exports.io.on('disconnect', () => metrics_1.activeSocketConnections.dec());
@@ -39,16 +41,6 @@ const globalLimiter = (0, express_rate_limit_1.default)({
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: 'Muitas requisições. Tente novamente em 1 minuto.' },
-});
-/** Auth-specific: 5 attempts per minute — brute-force protection.
- *  skipSuccessfulRequests: true means only failed attempts count toward the limit. */
-const authLimiter = (0, express_rate_limit_1.default)({
-    windowMs: 60 * 1000,
-    max: IS_TEST ? 10000 : 5,
-    skipSuccessfulRequests: true,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: { message: 'Muitas tentativas de login. Tente novamente em 1 minuto.' },
 });
 /** Admin dashboard: 20 req/min to support auto-refresh every 15 s */
 const adminLimiter = (0, express_rate_limit_1.default)({
@@ -67,16 +59,14 @@ exports.app.use((0, cors_1.default)({
     credentials: true,
 }));
 exports.app.use(express_1.default.json({ limit: '16kb' }));
-exports.app.use(passport_1.default.initialize());
 exports.app.use(metricsMiddleware_1.metricsMiddleware);
+exports.app.use(ipMiddleware_1.ipMiddleware);
 // Apply global limiter to all routes
 exports.app.use(globalLimiter);
 // ─── Routes ───────────────────────────────────────────────────────────────────
-exports.app.use('/api/auth/login', authLimiter);
-exports.app.use('/api/auth/register', authLimiter);
-exports.app.use('/api/auth', auth_1.default);
 exports.app.use('/api/stats', stats_1.default);
 exports.app.use('/api/admin', adminLimiter, admin_1.default);
+exports.app.use('/api/player', player_1.default);
 exports.app.get('/metrics', async (_req, res) => {
     res.set('Content-Type', metrics_1.register.contentType);
     res.end(await metrics_1.register.metrics());

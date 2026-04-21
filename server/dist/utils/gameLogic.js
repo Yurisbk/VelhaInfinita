@@ -35,8 +35,8 @@ function createInitialState() {
 /**
  * Apply a move to the current game state and return the new state.
  * Infinite rule: if a player already has 3 pieces and places a 4th,
- * we first check for a win (the 4th piece might complete a row),
- * then remove the oldest piece from the board.
+ * the oldest (fading) piece is removed FIRST, then win is checked.
+ * The fading piece cannot be part of a winning combination.
  */
 function applyMove(state, index) {
     if (state.winner !== null)
@@ -51,6 +51,10 @@ function applyMove(state, index) {
     };
     newBoard[index] = currentPlayer;
     newQueues[currentPlayer].push(index);
+    if (newQueues[currentPlayer].length > 3) {
+        const removed = newQueues[currentPlayer].shift();
+        newBoard[removed] = null;
+    }
     if (checkWinner(newBoard, currentPlayer)) {
         return {
             board: newBoard,
@@ -59,10 +63,6 @@ function applyMove(state, index) {
             winner: currentPlayer,
             fadingCell: null,
         };
-    }
-    if (newQueues[currentPlayer].length > 3) {
-        const removed = newQueues[currentPlayer].shift();
-        newBoard[removed] = null;
     }
     const nextPlayer = currentPlayer === 'X' ? 'O' : 'X';
     const fadingCell = newQueues[nextPlayer].length === 3 ? newQueues[nextPlayer][0] : null;

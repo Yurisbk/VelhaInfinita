@@ -6,6 +6,7 @@ import Board from '../components/Board';
 import GameStatus from '../components/GameStatus';
 import PlayerSetup, { PlayerConfig } from '../components/PlayerSetup';
 import { GameState, createInitialState } from '../utils/gameLogic';
+import { usePlayer } from '../context/PlayerContext';
 
 type Phase = 'setup' | 'searching' | 'playing' | 'ended';
 type RematchState = 'idle' | 'waiting' | 'opponent_wants';
@@ -20,32 +21,29 @@ function getSocket(): Socket {
   return socket;
 }
 
-export default function QuickMatch() {
-  const [phase, setPhase] = useState<Phase>('setup');
+export default function RankedMatch() {
+  const { playerId } = usePlayer();
+
+  const [phase, setPhase]               = useState<Phase>('setup');
   const [playerConfig, setPlayerConfig] = useState<PlayerConfig | null>(null);
-  const [mySymbol, setMySymbol] = useState<'X' | 'O' | null>(null);
+  const [mySymbol, setMySymbol]         = useState<'X' | 'O' | null>(null);
   const [opponentName, setOpponentName] = useState('');
-  const [gameState, setGameState] = useState<GameState>(createInitialState);
-  const [statusMsg, setStatusMsg] = useState('');
-  const [error, setError] = useState('');
+  const [gameState, setGameState]       = useState<GameState>(createInitialState);
+  const [statusMsg, setStatusMsg]       = useState('');
+  const [error, setError]               = useState('');
   const [rematchState, setRematchState] = useState<RematchState>('idle');
   const [queuePosition, setQueuePosition] = useState(1);
+  const [eloChange, setEloChange]       = useState<{ newElo: number; delta: number } | null>(null);
 
   useEffect(() => {
     const s = getSocket();
 
-    s.on('queue_joined', ({ position }: { position: number }) => {
-      setQueuePosition(position);
-    });
-
+    s.on('queue_joined', ({ position }: { position: number }) => setQueuePosition(position));
     s.on('queue_timeout', () => {
       setError('Tempo esgotado. Nenhum oponente encontrado.');
       setPhase('setup');
     });
-
-    s.on('queue_left', () => {
-      setPhase('setup');
-    });
+    s.on('queue_left', () => setPhase('setup'));
 
     s.on('game_start', ({ symbol, opponentName: name }: { symbol: 'X' | 'O'; opponentName?: string }) => {
       setMySymbol(symbol);
@@ -53,11 +51,16 @@ export default function QuickMatch() {
       setPhase('playing');
       setStatusMsg('');
       setRematchState('idle');
+      setEloChange(null);
     });
 
     s.on('game_update', (state: GameState) => {
       setGameState(state);
       if (state.winner) setPhase('ended');
+    });
+
+    s.on('elo_update', (data: { newElo: number; delta: number }) => {
+      setEloChange(data);
     });
 
     s.on('opponent_left', ({ winner }: { winner: 'X' | 'O' | null }) => {
@@ -71,17 +74,9 @@ export default function QuickMatch() {
       setRematchState('idle');
     });
 
-    s.on('rematch_requested', () => {
-      setRematchState('opponent_wants');
-    });
-
-    s.on('rematch_expired', () => {
-      setRematchState('idle');
-    });
-
-    s.on('error', (msg: string) => {
-      setError(msg);
-    });
+    s.on('rematch_requested', () => setRematchState('opponent_wants'));
+    s.on('rematch_expired',   () => setRematchState('idle'));
+    s.on('error', (msg: string) => setError(msg));
 
     return () => {
       s.off('queue_joined');
@@ -89,6 +84,7 @@ export default function QuickMatch() {
       s.off('queue_left');
       s.off('game_start');
       s.off('game_update');
+      s.off('elo_update');
       s.off('opponent_left');
       s.off('rematch_requested');
       s.off('rematch_expired');
@@ -96,12 +92,19 @@ export default function QuickMatch() {
     };
   }, []);
 
-  const handleSearch = useCallback((cfg: PlayerConfig) => {
-    setPlayerConfig(cfg);
-    setError('');
-    getSocket().emit('join_queue', { name: cfg.player1Name, symbol: cfg.mySymbol ?? 'X' });
-    setPhase('searching');
-  }, []);
+  const handleSearch = useCallback(
+    (cfg: PlayerConfig) => {
+      setPlayerConfig(cfg);
+      setError('');
+      getSocket().emit('join_ranked_queue', {
+        name: cfg.player1Name,
+        symbol: cfg.mySymbol ?? 'X',
+        playerId,
+      });
+      setPhase('searching');
+    },
+    [playerId],
+  );
 
   const handleCancelSearch = useCallback(() => {
     getSocket().emit('leave_queue');
@@ -131,10 +134,11 @@ export default function QuickMatch() {
     setStatusMsg('');
     setError('');
     setRematchState('idle');
+    setEloChange(null);
   }, []);
 
   const isMyTurn = mySymbol === gameState.currentPlayer;
-  const myName = playerConfig?.player1Name || 'Você';
+  const myName   = playerConfig?.player1Name || 'Você';
   const myLabelX = mySymbol === 'X' ? `${myName} (X)` : `${opponentName || 'Oponente'} (X)`;
   const myLabelO = mySymbol === 'O' ? `${myName} (O)` : `${opponentName || 'Oponente'} (O)`;
 
@@ -145,7 +149,7 @@ export default function QuickMatch() {
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        ⚡ Partida Rápida
+        🏆 Partida Ranqueada
       </motion.h1>
 
       {error && (
@@ -162,13 +166,9 @@ export default function QuickMatch() {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0 }}
           >
-            <PlayerSetup
-              mode="online"
-              onConfirm={handleSearch}
-              onBack={() => window.history.back()}
-            />
+            <PlayerSetup mode="online" onConfirm={handleSearch} onBack={() => window.history.back()} />
             <p className="text-white/30 text-xs text-center mt-4">
-              Você será pareado com alguém que também está procurando.
+              ELO em jogo — jogue de forma ranqueada contra outros jogadores.
             </p>
           </motion.div>
         )}
@@ -184,16 +184,15 @@ export default function QuickMatch() {
             <div className="space-y-2">
               <div className="flex justify-center">
                 <motion.div
-                  className="w-16 h-16 rounded-full border-4 border-primary border-t-transparent"
+                  className="w-16 h-16 rounded-full border-4 border-yellow-400 border-t-transparent"
                   animate={{ rotate: 360 }}
                   transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                 />
               </div>
-              <p className="text-lg font-bold">Procurando oponente…</p>
+              <p className="text-lg font-bold">Procurando oponente ranqueado…</p>
               <p className="text-white/40 text-sm">Posição na fila: #{queuePosition}</p>
               <p className="text-white/30 text-xs">Timeout em 60 segundos</p>
             </div>
-
             <button onClick={handleCancelSearch} className="btn-ghost w-full text-sm">
               Cancelar
             </button>
@@ -208,13 +207,23 @@ export default function QuickMatch() {
             animate={{ opacity: 1, scale: 1 }}
           >
             <div className="flex items-center justify-between text-sm">
-              <span className={`text-base font-semibold px-3 py-1 rounded-full ${isMyTurn ? 'bg-primary/30 text-primary' : 'bg-white/10 text-white/40'}`}>
+              <span className={`font-semibold px-3 py-1 rounded-full ${isMyTurn ? 'bg-yellow-500/30 text-yellow-400' : 'bg-white/10 text-white/40'}`}>
                 {myName} ({mySymbol}) {isMyTurn && phase === 'playing' ? '— sua vez!' : ''}
               </span>
               <span className="text-white/50 text-sm">vs {opponentName || 'Oponente'}</span>
             </div>
 
             {statusMsg && <p className="text-center text-white/60 text-sm">{statusMsg}</p>}
+
+            {phase === 'ended' && eloChange && (
+              <motion.div
+                className={`text-center text-lg font-bold ${eloChange.delta >= 0 ? 'text-green-400' : 'text-red-400'}`}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+              >
+                ELO: {eloChange.newElo} ({eloChange.delta >= 0 ? '+' : ''}{eloChange.delta})
+              </motion.div>
+            )}
 
             <GameStatus
               state={gameState}

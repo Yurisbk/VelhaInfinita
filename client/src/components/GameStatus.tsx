@@ -43,7 +43,7 @@ export default function GameStatus({
       </AnimatePresence>
 
       {subMessage && (
-        <p className="text-xs sm:text-sm text-orange-400 animate-pulse">{subMessage}</p>
+        <p className="text-sm sm:text-base text-orange-400 animate-pulse">{subMessage}</p>
       )}
 
       {winner && onReset && (

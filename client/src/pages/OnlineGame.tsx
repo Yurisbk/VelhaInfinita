@@ -236,7 +236,7 @@ export default function OnlineGame() {
           animate={{ opacity: 1, scale: 1 }}
         >
           <div className="text-center">
-            <span className={`text-sm font-semibold px-3 py-1 rounded-full ${isMyTurn ? 'bg-primary/30 text-primary' : 'bg-white/10 text-white/40'}`}>
+            <span className={`text-base font-semibold px-3 py-1 rounded-full ${isMyTurn ? 'bg-primary/30 text-primary' : 'bg-white/10 text-white/40'}`}>
               {myName} é o {mySymbol} {isMyTurn && phase === 'playing' ? '— sua vez!' : ''}
             </span>
           </div>

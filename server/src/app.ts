@@ -8,6 +8,7 @@ import http from 'http';
 
 import statsRouter from './routes/stats';
 import adminRouter from './routes/admin';
+import playerRouter from './routes/player';
 import { registerGameSocket } from './sockets/gameSocket';
 import { metricsMiddleware } from './middleware/metricsMiddleware';
 import { ipMiddleware } from './middleware/ipMiddleware';
@@ -22,6 +23,8 @@ export const io = new SocketIOServer(server, {
     origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
     methods: ['GET', 'POST'],
   },
+  pingInterval: 10000,
+  pingTimeout: 20000,
 });
 
 io.on('connection', () => activeSocketConnections.inc());
@@ -72,6 +75,7 @@ app.use(globalLimiter);
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/stats', statsRouter);
 app.use('/api/admin', adminLimiter, adminRouter);
+app.use('/api/player', playerRouter);
 
 app.get('/metrics', async (_req, res) => {
   res.set('Content-Type', register.contentType);

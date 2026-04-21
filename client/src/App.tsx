@@ -7,6 +7,7 @@ import LocalGame from './pages/LocalGame';
 import CPUGame from './pages/CPUGame';
 import OnlineGame from './pages/OnlineGame';
 import QuickMatch from './pages/QuickMatch';
+import RankedMatch from './pages/RankedMatch';
 import AdminDashboard from './pages/AdminDashboard';
 
 export default function App() {
@@ -23,6 +24,7 @@ export default function App() {
             <Route path="/cpu" element={<CPUGame />} />
             <Route path="/online" element={<OnlineGame />} />
             <Route path="/partida-rapida" element={<QuickMatch />} />
+            <Route path="/ranqueado" element={<RankedMatch />} />
             <Route path="/admin" element={<AdminDashboard />} />
           </Routes>
         </div>
