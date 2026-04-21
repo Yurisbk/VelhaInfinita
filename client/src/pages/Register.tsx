@@ -33,7 +33,8 @@ export default function Register() {
   }
 
   function handleGoogleLogin() {
-    window.location.href = '/api/auth/google';
+    const origin = import.meta.env.VITE_API_URL ?? '';
+    window.location.href = `${origin}/api/auth/google`;
   }
 
   return (

@@ -1,4 +1,28 @@
-﻿node_modules/
+﻿# Dependências
+node_modules/
+**/node_modules/
+
+# Build outputs
 dist/
+**/dist/
+
+# Variáveis de ambiente (nunca commitar!)
 .env
+**/.env
+!**/.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Binários baixados pelo mongodb-memory-server
+**/.cache/mongodb-memory-server/
 *.exe

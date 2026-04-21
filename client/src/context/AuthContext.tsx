@@ -58,8 +58,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   async function verifyAndStoreToken(t: string) {
+    const apiOrigin = import.meta.env.VITE_API_URL ?? '';
     try {
-      const res = await fetch('/api/auth/me', {
+      const res = await fetch(`${apiOrigin}/api/auth/me`, {
         headers: { Authorization: `Bearer ${t}` },
       });
       if (res.ok) {

@@ -1,4 +1,5 @@
-const BASE = '/api';
+const API_ORIGIN = import.meta.env.VITE_API_URL ?? '';
+const BASE = `${API_ORIGIN}/api`;
 
 async function request<T>(
   endpoint: string,
@@ -45,3 +46,6 @@ export const api = {
     return request<unknown>('/stats', {}, token);
   },
 };
+
+/** URL base do servidor (sem /api) — usado para OAuth e sockets */
+export const serverOrigin = API_ORIGIN;

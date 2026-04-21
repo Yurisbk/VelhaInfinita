@@ -76,9 +76,10 @@ export default function AdminDashboard() {
   }, []);
 
   const fetchData = useCallback(async (pw: string) => {
+    const apiOrigin = import.meta.env.VITE_API_URL ?? '';
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/dashboard', {
+      const res = await fetch(`${apiOrigin}/api/admin/dashboard`, {
         headers: { 'x-admin-password': pw },
       });
       if (!res.ok) {
@@ -108,7 +109,8 @@ export default function AdminDashboard() {
   async function handleLogin(e: FormEvent) {
     e.preventDefault();
     setError('');
-    const res = await fetch('/api/admin/verify', {
+    const apiOrigin = import.meta.env.VITE_API_URL ?? '';
+    const res = await fetch(`${apiOrigin}/api/admin/verify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password }),
