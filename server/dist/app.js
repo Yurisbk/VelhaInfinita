@@ -31,10 +31,11 @@ exports.io.on('connection', () => metrics_1.activeSocketConnections.inc());
 exports.io.on('disconnect', () => metrics_1.activeSocketConnections.dec());
 (0, gameSocket_1.registerGameSocket)(exports.io);
 // ─── Rate Limiters ────────────────────────────────────────────────────────────
+const IS_TEST = process.env.NODE_ENV === 'test';
 /** Global: 10 requests per minute for every route */
 const globalLimiter = (0, express_rate_limit_1.default)({
     windowMs: 60 * 1000,
-    max: 10,
+    max: IS_TEST ? 10000 : 10,
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: 'Muitas requisições. Tente novamente em 1 minuto.' },
@@ -43,7 +44,7 @@ const globalLimiter = (0, express_rate_limit_1.default)({
  *  skipSuccessfulRequests: true means only failed attempts count toward the limit. */
 const authLimiter = (0, express_rate_limit_1.default)({
     windowMs: 60 * 1000,
-    max: 5,
+    max: IS_TEST ? 10000 : 5,
     skipSuccessfulRequests: true,
     standardHeaders: true,
     legacyHeaders: false,
@@ -52,7 +53,7 @@ const authLimiter = (0, express_rate_limit_1.default)({
 /** Admin dashboard: 20 req/min to support auto-refresh every 15 s */
 const adminLimiter = (0, express_rate_limit_1.default)({
     windowMs: 60 * 1000,
-    max: 20,
+    max: IS_TEST ? 10000 : 20,
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: 'Limite do painel admin atingido.' },

@@ -5,16 +5,21 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 require("dotenv/config");
 const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
 const express_1 = __importDefault(require("express"));
 const mongoose_1 = __importDefault(require("mongoose"));
 const app_1 = require("./app");
-// ─── Static frontend (production) ─────────────────────────────────────────────
+// ─── Static frontend (production, monolith only) ──────────────────────────────
+// Only active when the client build exists alongside the server (monolith deploy).
+// On Render + Vercel (separate deploys) this folder won't exist and is skipped.
 if (process.env.NODE_ENV === 'production') {
     const clientDist = path_1.default.join(__dirname, '../../client/dist');
-    app_1.app.use(express_1.default.static(clientDist));
-    app_1.app.get('*', (_req, res) => {
-        res.sendFile(path_1.default.join(clientDist, 'index.html'));
-    });
+    if (fs_1.default.existsSync(clientDist)) {
+        app_1.app.use(express_1.default.static(clientDist));
+        app_1.app.get('*', (_req, res) => {
+            res.sendFile(path_1.default.join(clientDist, 'index.html'));
+        });
+    }
 }
 // ─── MongoDB + Start ──────────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT ?? 3001);

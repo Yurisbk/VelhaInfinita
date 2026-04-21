@@ -111,8 +111,8 @@ export default function CPUGame() {
           disabled={state.currentPlayer === 'O' || cpuThinking}
         />
 
-        <div className="flex gap-3 justify-center pt-2">
-          <button onClick={handleReset} className="btn-ghost text-sm">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3 justify-center pt-2">
+          <button onClick={handleReset} className="btn-ghost text-sm w-full sm:w-auto">
             Reiniciar
           </button>
           <button
@@ -120,11 +120,11 @@ export default function CPUGame() {
               reset();
               setDifficulty(null);
             }}
-            className="btn-ghost text-sm"
+            className="btn-ghost text-sm w-full sm:w-auto"
           >
             Mudar dificuldade
           </button>
-          <Link to="/" className="btn-ghost text-sm">
+          <Link to="/" className="btn-ghost text-sm text-center w-full sm:w-auto">
             Menu
           </Link>
         </div>
