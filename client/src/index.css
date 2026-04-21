@@ -1,0 +1,51 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-dark text-white;
+  }
+
+  body {
+    @apply min-h-screen antialiased;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply px-6 py-3 rounded-xl font-semibold transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/30;
+  }
+
+  .btn-secondary {
+    @apply btn bg-secondary hover:bg-pink-400 text-white shadow-lg shadow-pink-500/30;
+  }
+
+  .btn-ghost {
+    @apply btn border border-white/20 hover:bg-white/10;
+  }
+
+  .card {
+    @apply bg-card rounded-2xl p-6 shadow-xl;
+  }
+
+  .input {
+    @apply w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/40
+           focus:outline-none focus:border-primary transition-colors;
+  }
+
+  .game-cell {
+    @apply aspect-square flex items-center justify-center rounded-2xl text-4xl font-bold
+           cursor-pointer select-none transition-all duration-200 active:scale-95
+           border-2;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { @apply bg-white/20 rounded-full; }
