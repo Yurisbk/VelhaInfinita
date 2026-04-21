@@ -1,5 +1,4 @@
-import { motion, useAnimation } from 'framer-motion';
-import { useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { Cell as CellType } from '../utils/gameLogic';
 
 interface CellProps {
@@ -13,13 +12,13 @@ interface CellProps {
 
 const PIECE = {
   X: {
-    text: '#67e8f9',   // cyan-300
+    text: '#67e8f9',
     glow: '0 0 18px rgba(103, 232, 249, 0.85), 0 0 40px rgba(103, 232, 249, 0.4)',
     border: 'rgba(103, 232, 249, 0.45)',
     bg: 'rgba(103, 232, 249, 0.07)',
   },
   O: {
-    text: '#f9a8d4',   // pink-300
+    text: '#f9a8d4',
     glow: '0 0 18px rgba(249, 168, 212, 0.85), 0 0 40px rgba(249, 168, 212, 0.4)',
     border: 'rgba(249, 168, 212, 0.45)',
     bg: 'rgba(249, 168, 212, 0.07)',
@@ -37,27 +36,13 @@ export default function Cell({
   onClick,
   disabled,
 }: CellProps) {
-  const controls = useAnimation();
   const isEmpty = value === null;
   const cfg = value ? PIECE[value] : null;
-
-  // Pulse effect when cell becomes the fading target
-  useEffect(() => {
-    if (isFading && value) {
-      controls.start({
-        scale: [1, 1.08, 1, 1.06, 1],
-        transition: { duration: 1.2, repeat: Infinity, ease: 'easeInOut' },
-      });
-    } else {
-      controls.stop();
-      controls.set({ scale: 1 });
-    }
-  }, [isFading, value, controls]);
 
   const cellBg = isWinning
     ? 'rgba(250, 204, 21, 0.12)'
     : cfg
-      ? (isFading ? 'rgba(251, 146, 60, 0.10)' : cfg.bg)
+      ? isFading ? 'rgba(251, 146, 60, 0.10)' : cfg.bg
       : 'transparent';
 
   const cellBorder = isWinning
@@ -89,15 +74,28 @@ export default function Cell({
     >
       {value && (
         <motion.span
-          animate={controls}
+          // key forces re-mount on piece placement and on fading state change,
+          // ensuring the entry animation always runs (fixes mobile O visibility)
+          key={`${index}-${value}-${String(isFading)}`}
           initial={{ scale: 0, rotate: -15 }}
+          animate={
+            isFading
+              ? {
+                  scale: [1, 1.08, 1, 1.06, 1],
+                  rotate: 0,
+                  transition: { duration: 1.2, repeat: Infinity, ease: 'easeInOut' },
+                }
+              : {
+                  scale: 1,
+                  rotate: 0,
+                  transition: { type: 'spring', stiffness: 300, damping: 20 },
+                }
+          }
           className="font-black leading-none select-none"
           style={{
             fontSize: 'clamp(1.8rem, 8vw, 2.6rem)',
             color: isFading ? '#fb923c' : cfg!.text,
-            textShadow: isFading
-              ? FADING_GLOW
-              : cfg!.glow,
+            textShadow: isFading ? FADING_GLOW : cfg!.glow,
             filter: isFading ? 'brightness(1.2)' : 'brightness(1)',
             transition: 'color 0.25s, text-shadow 0.25s',
           }}

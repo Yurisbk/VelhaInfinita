@@ -26,7 +26,7 @@ describe('POST /api/auth/register', () => {
   it('cria usuário e retorna token JWT', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ email: 'test@test.com', username: 'Teste', password: '123456' });
+      .send({ email: 'test@test.com', username: 'Teste', password: 'senha123' });
 
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty('token');
@@ -36,11 +36,11 @@ describe('POST /api/auth/register', () => {
   it('rejeita e-mail duplicado', async () => {
     await request(app)
       .post('/api/auth/register')
-      .send({ email: 'dup@test.com', username: 'A', password: '123456' });
+      .send({ email: 'dup@test.com', username: 'UserA', password: 'senha123' });
 
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ email: 'dup@test.com', username: 'B', password: '123456' });
+      .send({ email: 'dup@test.com', username: 'UserB', password: 'senha123' });
 
     expect(res.status).toBe(409);
   });
@@ -48,14 +48,14 @@ describe('POST /api/auth/register', () => {
   it('rejeita senha curta', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ email: 'short@test.com', username: 'S', password: '123' });
+      .send({ email: 'short@test.com', username: 'Short', password: '123' });
     expect(res.status).toBe(400);
   });
 
   it('rejeita payload sem e-mail', async () => {
     const res = await request(app)
       .post('/api/auth/register')
-      .send({ username: 'NoEmail', password: '123456' });
+      .send({ username: 'NoEmail', password: 'senha123' });
     expect(res.status).toBe(400);
   });
 });
@@ -87,7 +87,7 @@ describe('POST /api/auth/login', () => {
   it('rejeita e-mail inexistente', async () => {
     const res = await request(app)
       .post('/api/auth/login')
-      .send({ email: 'nao@existe.com', password: '123456' });
+      .send({ email: 'nao@existe.com', password: 'senha123' });
 
     expect(res.status).toBe(401);
   });
@@ -97,7 +97,7 @@ describe('GET /api/auth/me', () => {
   it('retorna o usuário com token válido', async () => {
     const reg = await request(app)
       .post('/api/auth/register')
-      .send({ email: 'me@test.com', username: 'MeUser', password: '123456' });
+      .send({ email: 'me@test.com', username: 'MeUser', password: 'senha123' });
 
     const token = reg.body.token as string;
     const res = await request(app)

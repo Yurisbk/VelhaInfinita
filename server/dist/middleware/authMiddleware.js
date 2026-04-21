@@ -6,6 +6,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.requireAuth = requireAuth;
 exports.optionalAuth = optionalAuth;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const JWT_OPTIONS = {
+    algorithms: ['HS256'],
+};
 function requireAuth(req, res, next) {
     const authHeader = req.headers.authorization;
     if (!authHeader?.startsWith('Bearer ')) {
@@ -14,7 +17,7 @@ function requireAuth(req, res, next) {
     }
     const token = authHeader.slice(7);
     try {
-        const payload = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET ?? 'secret');
+        const payload = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET ?? 'secret', JWT_OPTIONS);
         req.user = { id: payload.id, email: payload.email, username: payload.username };
         next();
     }
@@ -27,7 +30,7 @@ function optionalAuth(req, _res, next) {
     if (authHeader?.startsWith('Bearer ')) {
         const token = authHeader.slice(7);
         try {
-            const payload = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET ?? 'secret');
+            const payload = jsonwebtoken_1.default.verify(token, process.env.JWT_SECRET ?? 'secret', JWT_OPTIONS);
             req.user = { id: payload.id, email: payload.email, username: payload.username };
         }
         catch {

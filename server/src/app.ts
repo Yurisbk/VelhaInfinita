@@ -29,6 +29,39 @@ io.on('connection', () => activeSocketConnections.inc());
 io.on('disconnect', () => activeSocketConnections.dec());
 registerGameSocket(io);
 
+// ─── Rate Limiters ────────────────────────────────────────────────────────────
+
+const IS_TEST = process.env.NODE_ENV === 'test';
+
+/** Global: 10 requests per minute for every route */
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: IS_TEST ? 10_000 : 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Muitas requisições. Tente novamente em 1 minuto.' },
+});
+
+/** Auth-specific: 5 attempts per minute — brute-force protection.
+ *  skipSuccessfulRequests: true means only failed attempts count toward the limit. */
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: IS_TEST ? 10_000 : 5,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Muitas tentativas de login. Tente novamente em 1 minuto.' },
+});
+
+/** Admin dashboard: 20 req/min to support auto-refresh every 15 s */
+const adminLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: IS_TEST ? 10_000 : 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Limite do painel admin atingido.' },
+});
+
 // ─── Express Middleware ───────────────────────────────────────────────────────
 app.use(
   helmet({
@@ -41,22 +74,19 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
+app.use(express.json({ limit: '16kb' }));
 app.use(passport.initialize());
 app.use(metricsMiddleware);
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use('/api', limiter);
+// Apply global limiter to all routes
+app.use(globalLimiter);
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
 app.use('/api/auth', authRouter);
 app.use('/api/stats', statsRouter);
-app.use('/api/admin', adminRouter);
+app.use('/api/admin', adminLimiter, adminRouter);
 
 app.get('/metrics', async (_req, res) => {
   res.set('Content-Type', register.contentType);
