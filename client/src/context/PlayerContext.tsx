@@ -2,7 +2,6 @@ import {
   createContext,
   useContext,
   useState,
-  useEffect,
   useCallback,
   ReactNode,
 } from 'react';
@@ -50,17 +49,12 @@ function getOrCreatePlayerId(): string {
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const [playerId]   = useState<string>(() => getOrCreatePlayerId());
-  const [playerName, setPlayerNameState] = useState<string>('');
-  const [hasConsented, setHasConsented]  = useState<boolean>(false);
-
-  useEffect(() => {
-    const consent = getCookie(COOKIE_CONSENT);
-    const name    = getCookie(COOKIE_PLAYER);
-    if (consent === 'true') {
-      setHasConsented(true);
-      setPlayerNameState(name ?? '');
-    }
-  }, []);
+  // Read cookies synchronously so the first render (e.g. /perfil) already knows
+  // whether the player consented and what their name is.
+  const [hasConsented, setHasConsented]  = useState<boolean>(() => getCookie(COOKIE_CONSENT) === 'true');
+  const [playerName, setPlayerNameState] = useState<string>(() =>
+    getCookie(COOKIE_CONSENT) === 'true' ? getCookie(COOKIE_PLAYER) ?? '' : '',
+  );
 
   const setPlayerName = useCallback(
     (name: string) => {

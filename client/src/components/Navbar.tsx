@@ -9,14 +9,14 @@ export default function Navbar() {
       <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
         <Link
           to="/"
-          className="text-white font-black text-lg hover:text-primary transition-colors"
+          className="text-white font-black text-lg hover:text-indigo-300 transition-colors shrink-0"
         >
           ♾️ Velha Infinita
         </Link>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           {playerName ? (
-            <Link to="/perfil" className="text-white/60 text-sm hover:text-white transition-colors">
+            <Link to="/perfil" className="text-white/60 text-sm hover:text-white transition-colors truncate">
               Olá, <span className="text-white font-semibold">{playerName}</span>
             </Link>
           ) : (

@@ -27,24 +27,30 @@ export const io = new SocketIOServer(server, {
   pingTimeout: 20000,
 });
 
-io.on('connection', () => activeSocketConnections.inc());
-io.on('disconnect', () => activeSocketConnections.dec());
+io.on('connection', (socket) => {
+  activeSocketConnections.inc();
+  socket.on('disconnect', () => activeSocketConnections.dec());
+});
 registerGameSocket(io);
 
 // ─── Rate Limiters ────────────────────────────────────────────────────────────
 
 const IS_TEST = process.env.NODE_ENV === 'test';
 
-/** Global: 10 requests per minute for every route */
+// Behind Render/Vercel the client IP comes in X-Forwarded-For; without this every
+// visitor would share the proxy's IP (and a single rate-limit bucket).
+app.set('trust proxy', 1);
+
+/** Global: 120 requests per minute per IP */
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: IS_TEST ? 10_000 : 10,
+  max: IS_TEST ? 10_000 : 120,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Muitas requisições. Tente novamente em 1 minuto.' },
 });
 
-/** Admin dashboard: 20 req/min to support auto-refresh every 15 s */
+/** Admin: 20 req/min (auto-refresh every 15 s) — also slows down password guessing */
 const adminLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: IS_TEST ? 10_000 : 20,

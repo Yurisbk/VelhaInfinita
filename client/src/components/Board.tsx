@@ -1,11 +1,11 @@
-import { GameState } from '../utils/gameLogic';
+import { GameState, getWinningLine } from '../utils/gameLogic';
 import Cell from './Cell';
 
 interface BoardProps {
   state: GameState;
   onMove: (index: number) => void;
   disabled?: boolean;
-  /** Indices that are part of the winning combination */
+  /** Indices that are part of the winning combination (derived from the state when omitted) */
   winningCells?: number[];
 }
 
@@ -13,8 +13,9 @@ export default function Board({
   state,
   onMove,
   disabled = false,
-  winningCells = [],
+  winningCells,
 }: BoardProps) {
+  const highlight = winningCells ?? (state.winner ? getWinningLine(state.board, state.winner) : []);
   return (
     <div
       className="grid gap-2 sm:gap-3 w-full max-w-[min(90vw,360px)] mx-auto"
@@ -27,7 +28,7 @@ export default function Board({
           value={cell}
           index={i}
           isFading={state.fadingCell === i}
-          isWinning={winningCells.includes(i)}
+          isWinning={highlight.includes(i)}
           onClick={onMove}
           disabled={disabled || state.winner !== null}
         />

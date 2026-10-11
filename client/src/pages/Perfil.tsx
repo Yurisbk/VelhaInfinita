@@ -29,7 +29,7 @@ export default function Perfil() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-60px)] flex items-center justify-center px-4 py-12">
+    <div className="flex-1 flex items-center justify-center px-4 py-12">
       <AnimatePresence mode="wait">
         {showLGPD ? (
           <motion.div
@@ -68,7 +68,7 @@ export default function Perfil() {
                   Ao jogar, coletamos os seguintes dados:
                 </p>
                 <ul className="list-disc list-inside space-y-1 text-white/60">
-                  <li><strong className="text-white/80">Apelido:</strong> salvo em cookie no seu navegador por 7 dias para personalizar a experiência.</li>
+                  <li><strong className="text-white/80">Apelido:</strong> salvo em cookie no seu navegador por 1 ano para personalizar a experiência.</li>
                   <li><strong className="text-white/80">Endereço IP:</strong> registrado para fins de estatísticas anônimas de acesso e localização geográfica aproximada.</li>
                   <li><strong className="text-white/80">Cookies de sessão:</strong> utilizados exclusivamente para manter suas preferências locais.</li>
                 </ul>
@@ -135,7 +135,7 @@ export default function Perfil() {
 
             <div className="bg-white/5 border border-white/10 rounded-2xl p-4 text-xs text-white/50 space-y-2">
               <p className="font-semibold text-white/70">Seus dados armazenados</p>
-              <p>Apelido e preferências são salvos em cookies no seu navegador (7 dias). Para remover, limpe os cookies do site.</p>
+              <p>Apelido e preferências são salvos em cookies no seu navegador (1 ano). Para remover, limpe os cookies do site.</p>
             </div>
           </motion.div>
         )}
