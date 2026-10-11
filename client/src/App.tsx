@@ -14,7 +14,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <PlayerProvider>
-        <div className="min-h-screen bg-dark">
+        <div className="min-h-screen bg-dark flex flex-col">
           <Navbar />
           <Routes>
             <Route path="/" element={<Home />} />

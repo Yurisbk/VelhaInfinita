@@ -99,3 +99,14 @@ describe('getValidMoves', () => {
     expect(getValidMoves(s)).toHaveLength(8);
   });
 });
+
+describe('getWinningLine', () => {
+  it('retorna a linha completada pelo vencedor', async () => {
+    const { getWinningLine } = await import('../utils/gameLogic');
+    let s = createInitialState();
+    for (const i of [0, 3, 1, 4, 2]) s = applyMove(s, i);
+    expect(s.winner).toBe('X');
+    expect(getWinningLine(s.board, 'X')).toEqual([0, 1, 2]);
+    expect(getWinningLine(s.board, 'O')).toEqual([]);
+  });
+});

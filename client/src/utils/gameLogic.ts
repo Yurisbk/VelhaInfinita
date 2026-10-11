@@ -29,6 +29,11 @@ export function checkWinner(board: Cell[], player: Player): boolean {
   );
 }
 
+/** The three indices of the line the player completed, or [] if none. */
+export function getWinningLine(board: Cell[], player: Player): number[] {
+  return WIN_COMBOS.find(([a, b, c]) => board[a] === player && board[b] === player && board[c] === player) ?? [];
+}
+
 export function getValidMoves(state: GameState): number[] {
   return state.board
     .map((cell, idx) => (cell === null ? idx : -1))

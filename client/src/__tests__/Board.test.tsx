@@ -46,3 +46,16 @@ describe('Board component', () => {
     expect(screen.getByText('O')).toBeInTheDocument();
   });
 });
+
+describe('Board — linha vencedora', () => {
+  it('destaca as células da linha vencedora a partir do estado', async () => {
+    const { applyMove: move, createInitialState: init } = await import('../utils/gameLogic');
+    let s = init();
+    for (const i of [0, 3, 1, 4, 2]) s = move(s, i);
+    render(<Board state={s} onMove={vi.fn()} />);
+    const buttons = screen.getAllByRole('button');
+    const yellow = buttons.map((b) => (b as HTMLElement).style.borderColor);
+    expect(yellow.slice(0, 3).every((c) => c === 'rgb(250, 204, 21)')).toBe(true);
+    expect(yellow[3]).not.toBe('rgb(250, 204, 21)');
+  });
+});

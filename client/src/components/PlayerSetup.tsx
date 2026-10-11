@@ -8,6 +8,9 @@ interface PlayerSetupProps {
   mode: SetupMode;
   onConfirm: (config: PlayerConfig) => void;
   onBack?: () => void;
+  /** Explains how the chosen symbol is used (online modes) */
+  symbolHint?: string;
+  submitLabel?: string;
 }
 
 export interface PlayerConfig {
@@ -19,7 +22,7 @@ export interface PlayerConfig {
   mySymbol: 'X' | 'O';
 }
 
-export default function PlayerSetup({ mode, onConfirm, onBack }: PlayerSetupProps) {
+export default function PlayerSetup({ mode, onConfirm, onBack, symbolHint, submitLabel = 'Jogar' }: PlayerSetupProps) {
   const { playerName } = usePlayer();
   const [p1, setP1] = useState(playerName || '');
   const [p2, setP2] = useState('');
@@ -36,19 +39,12 @@ export default function PlayerSetup({ mode, onConfirm, onBack }: PlayerSetupProp
     });
   }
 
-  const title =
-    mode === 'local' ? '👥 Dois Jogadores' :
-    mode === 'cpu'   ? '🤖 vs CPU' :
-                       '🌐 Modo Online';
-
   return (
     <motion.div
       className="card w-full max-w-sm space-y-6"
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
     >
-      <h2 className="text-xl font-black text-center">{title}</h2>
-
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm text-white/60 mb-1">
@@ -100,16 +96,16 @@ export default function PlayerSetup({ mode, onConfirm, onBack }: PlayerSetupProp
                 </button>
               ))}
             </div>
-            {mode === 'cpu' && (
-              <p className="text-xs text-white/30 mt-2 text-center">
-                {symbol === 'X' ? 'Você joga primeiro' : 'CPU joga primeiro'}
-              </p>
-            )}
+            <p className="text-xs text-white/40 mt-2 text-center">
+              {mode === 'cpu'
+                ? symbol === 'X' ? 'X sempre começa — você joga primeiro' : 'X sempre começa — a CPU joga primeiro'
+                : symbolHint ?? 'X sempre começa'}
+            </p>
           </div>
         )}
 
         <button type="submit" className="btn-primary w-full">
-          Jogar
+          {submitLabel}
         </button>
 
         {onBack && (

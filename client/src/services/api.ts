@@ -17,9 +17,37 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   return data as T;
 }
 
+export interface PlayerStats {
+  name: string;
+  elo: number;
+  rankedWins: number;
+  rankedLosses: number;
+  rank?: number;
+}
+
+export interface GameReport {
+  mode: 'local' | 'cpu';
+  winner: 'X' | 'O';
+  moves: number[];
+  durationSeconds: number;
+  difficulty?: string;
+  humanSymbol?: 'X' | 'O';
+}
+
 export const api = {
   getStats(): Promise<unknown> {
     return request<unknown>('/stats');
+  },
+  /** Resolves null when the player has never played a ranked game */
+  getPlayer(playerId: string): Promise<PlayerStats | null> {
+    return request<PlayerStats>(`/player/${encodeURIComponent(playerId)}`).catch(() => null);
+  },
+  getLeaderboard(): Promise<PlayerStats[]> {
+    return request<PlayerStats[]>('/player/leaderboard');
+  },
+  /** Fire-and-forget: local/CPU results only feed the metrics */
+  reportGame(report: GameReport): void {
+    request('/stats/game', { method: 'POST', body: JSON.stringify(report) }).catch(() => {});
   },
 };
 

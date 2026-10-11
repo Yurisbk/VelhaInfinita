@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.QUEUE_TIMEOUT_MS = void 0;
 exports.registerGameSocket = registerGameSocket;
 const gameLogic_1 = require("../utils/gameLogic");
 const GameRecord_1 = require("../models/GameRecord");
@@ -9,14 +10,22 @@ const metrics_1 = require("../utils/metrics");
 const rooms = new Map();
 /** Tracks which room a socket currently belongs to */
 const socketRoomMap = new Map();
-const matchmakingQueue = [];
-const rankedQueue = [];
+const queues = { quickmatch: [], ranked: [] };
+exports.QUEUE_TIMEOUT_MS = 60000;
+const REMATCH_TIMEOUT_MS = 30000;
+const PLAYER_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
 /** Per-socket queue timeout handles so the matching side can cancel them */
 const queueTimeouts = new Map();
-function removeFromQueue(queue, socketId) {
-    const idx = queue.findIndex((e) => e.socketId === socketId);
-    if (idx !== -1)
-        queue.splice(idx, 1);
+function cleanName(name, fallback) {
+    return (typeof name === 'string' ? name.trim().slice(0, 20) : '') || fallback;
+}
+function cleanSymbol(symbol) {
+    return symbol === 'O' ? 'O' : 'X';
+}
+function updateQueueGauges() {
+    for (const q of Object.keys(queues)) {
+        metrics_1.matchmakingQueueSize.set({ queue: q }, queues[q].length);
+    }
 }
 function cancelQueueTimeout(socketId) {
     const t = queueTimeouts.get(socketId);
@@ -24,6 +33,23 @@ function cancelQueueTimeout(socketId) {
         clearTimeout(t);
         queueTimeouts.delete(socketId);
     }
+}
+/** Removes the socket from every queue. Returns true if it was queued. */
+function removeFromQueues(socketId) {
+    cancelQueueTimeout(socketId);
+    let removed = false;
+    for (const queue of Object.values(queues)) {
+        const idx = queue.findIndex((e) => e.socketId === socketId);
+        if (idx !== -1) {
+            queue.splice(idx, 1);
+            removed = true;
+        }
+    }
+    updateQueueGauges();
+    return removed;
+}
+function isQueued(socketId) {
+    return Object.values(queues).some((q) => q.some((e) => e.socketId === socketId));
 }
 /** Resolve symbols: respect preference, randomly break tie */
 function resolveSymbols(sym1, sym2) {
@@ -39,154 +65,198 @@ function generateRoomCode() {
     }
     return rooms.has(code) ? generateRoomCode() : code;
 }
-function cleanRoom(code) {
-    rooms.delete(code);
-    metrics_1.activeGameRooms.dec();
+function createRoom(code, players, mode) {
+    const room = {
+        code,
+        players,
+        state: (0, gameLogic_1.createInitialState)(),
+        startedAt: Date.now(),
+        moves: [],
+        rematchVotes: new Set(),
+        mode,
+    };
+    rooms.set(code, room);
+    metrics_1.activeGameRooms.inc();
+    return room;
 }
-function handleLeaveRoom(io, socket, code, isWin) {
+function cleanRoom(code) {
     const room = rooms.get(code);
     if (!room)
         return;
     clearTimeout(room.rematchTimeout);
-    const remaining = room.players.find((p) => p.socketId !== socket.id);
-    const winner = remaining?.symbol ?? null;
-    socket.to(code).emit('opponent_left', { winner });
-    if (winner && !isWin) {
-        const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);
-        const mode = room.ranked ? 'ranked' : 'online';
-        metrics_1.gamesWonTotal.inc({ mode, winner });
-        GameRecord_1.GameRecord.create({ mode, winner, moves: room.moves, durationSeconds }).catch(console.error);
-        if (room.ranked) {
-            updateRankedElo(io, room, winner).catch(console.error);
-        }
+    rooms.delete(code);
+    metrics_1.activeGameRooms.dec();
+}
+function emitGameStart(io, room) {
+    for (const p of room.players) {
+        const opponent = room.players.find((o) => o.socketId !== p.socketId);
+        io.to(p.socketId).emit('game_start', { symbol: p.symbol, opponentName: opponent?.name });
     }
+    io.to(room.code).emit('game_update', room.state);
+}
+function recordFinishedGame(io, room, winner, abandoned) {
+    const { mode } = room;
+    const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);
+    metrics_1.gamesWonTotal.inc({ mode, winner });
+    if (abandoned) {
+        metrics_1.gamesAbandonedTotal.inc({ mode });
+    }
+    else {
+        metrics_1.gameDurationSeconds.observe({ mode }, durationSeconds);
+        metrics_1.gameMoves.observe({ mode }, room.moves.length);
+    }
+    GameRecord_1.GameRecord.create({
+        mode,
+        winner,
+        moves: room.moves,
+        durationSeconds,
+        abandoned,
+        players: room.players.map((p) => p.name),
+    }).catch(console.error);
+    if (mode === 'ranked') {
+        updateRankedElo(io, room, winner).catch((err) => {
+            metrics_1.eloUpdatesTotal.inc({ status: 'failed' });
+            console.error(err);
+        });
+    }
+}
+/**
+ * A socket leaves its room (explicitly or by disconnecting). If a game was
+ * still running, the remaining player wins by abandonment. The room is always
+ * closed and both players are detached from it so they can queue again.
+ */
+function handleLeaveRoom(io, socket, code) {
+    socket.leave(code);
+    socketRoomMap.delete(socket.id);
+    const room = rooms.get(code);
+    if (!room)
+        return;
+    const remaining = room.players.find((p) => p.socketId !== socket.id);
+    const gameInProgress = room.players.length === 2 && room.state.winner === null;
+    const winner = gameInProgress && remaining ? remaining.symbol : null;
+    if (remaining) {
+        io.to(remaining.socketId).emit('opponent_left', { winner });
+        io.sockets.sockets.get(remaining.socketId)?.leave(code);
+        socketRoomMap.delete(remaining.socketId);
+    }
+    if (winner)
+        recordFinishedGame(io, room, winner, true);
     cleanRoom(code);
 }
 async function updateRankedElo(io, room, winnerSymbol) {
     const winnerPlayer = room.players.find((p) => p.symbol === winnerSymbol);
     const loserPlayer = room.players.find((p) => p.symbol !== winnerSymbol);
-    if (!winnerPlayer?.playerId || !loserPlayer?.playerId)
+    if (!winnerPlayer?.playerId || !loserPlayer?.playerId) {
+        metrics_1.eloUpdatesTotal.inc({ status: 'skipped' });
         return;
-    const [winnerDoc, loserDoc] = await Promise.all([
-        Player_1.Player.findOne({ playerId: winnerPlayer.playerId }),
-        Player_1.Player.findOne({ playerId: loserPlayer.playerId }),
-    ]);
-    if (!winnerDoc || !loserDoc)
-        return;
+    }
+    // Players are created on their first ranked result (and their name refreshed).
+    const ensure = (p) => Player_1.Player.findOneAndUpdate({ playerId: p.playerId }, { $set: { name: p.name } }, { upsert: true, new: true, setDefaultsOnInsert: true });
+    const [winnerDoc, loserDoc] = await Promise.all([ensure(winnerPlayer), ensure(loserPlayer)]);
     const { winner: newWinnerElo, loser: newLoserElo } = (0, elo_1.calcElo)(winnerDoc.elo, loserDoc.elo);
     await Promise.all([
-        Player_1.Player.updateOne({ playerId: winnerPlayer.playerId }, { elo: newWinnerElo, $inc: { rankedWins: 1 } }),
-        Player_1.Player.updateOne({ playerId: loserPlayer.playerId }, { elo: newLoserElo, $inc: { rankedLosses: 1 } }),
+        Player_1.Player.updateOne({ playerId: winnerPlayer.playerId }, { $set: { elo: newWinnerElo }, $inc: { rankedWins: 1 } }),
+        Player_1.Player.updateOne({ playerId: loserPlayer.playerId }, { $set: { elo: newLoserElo }, $inc: { rankedLosses: 1 } }),
     ]);
+    metrics_1.eloUpdatesTotal.inc({ status: 'applied' });
     io.to(winnerPlayer.socketId).emit('elo_update', { newElo: newWinnerElo, delta: newWinnerElo - winnerDoc.elo });
     io.to(loserPlayer.socketId).emit('elo_update', { newElo: newLoserElo, delta: newLoserElo - loserDoc.elo });
 }
-function createMatchedRoom(io, opponent, joiner, ranked) {
+function createMatchedRoom(io, opponent, joiner, mode) {
     const [symOpponent, symJoiner] = resolveSymbols(opponent.preferredSymbol, joiner.preferredSymbol);
     const code = generateRoomCode();
-    const room = {
-        code,
-        players: [
-            { socketId: opponent.socketId, symbol: symOpponent, name: opponent.name, playerId: opponent.playerId },
-            { socketId: joiner.socketId, symbol: symJoiner, name: joiner.name, playerId: joiner.playerId },
-        ],
-        state: (0, gameLogic_1.createInitialState)(),
-        startedAt: Date.now(),
-        moves: [],
-        rematchVotes: new Set(),
-        ranked,
-    };
-    rooms.set(code, room);
-    metrics_1.activeGameRooms.inc();
-    const opponentSocket = io.sockets.sockets.get(opponent.socketId);
-    if (opponentSocket) {
-        opponentSocket.join(code);
-        socketRoomMap.set(opponent.socketId, code);
+    const room = createRoom(code, [
+        { socketId: opponent.socketId, symbol: symOpponent, name: opponent.name, playerId: opponent.playerId },
+        { socketId: joiner.socketId, symbol: symJoiner, name: joiner.name, playerId: joiner.playerId },
+    ], mode);
+    for (const p of room.players) {
+        io.sockets.sockets.get(p.socketId)?.join(code);
+        socketRoomMap.set(p.socketId, code);
     }
-    const joinerSocket = io.sockets.sockets.get(joiner.socketId);
-    if (joinerSocket) {
-        joinerSocket.join(code);
-        socketRoomMap.set(joiner.socketId, code);
-    }
-    const mode = ranked ? 'ranked' : 'quickmatch';
     metrics_1.gamesStartedTotal.inc({ mode });
-    io.to(opponent.socketId).emit('game_start', { symbol: symOpponent, opponentName: joiner.name });
-    io.to(joiner.socketId).emit('game_start', { symbol: symJoiner, opponentName: opponent.name });
-    io.to(code).emit('game_update', room.state);
+    emitGameStart(io, room);
 }
-function joinQueue(socket, io, queue, entry, ranked) {
-    const currentRoom = socketRoomMap.get(socket.id);
-    if (entry.socketId && currentRoom)
+function joinQueue(socket, io, queueName, entry) {
+    if (socketRoomMap.has(socket.id)) {
+        socket.emit('error', 'Você já está em uma partida.');
         return;
-    if (queue.length > 0) {
-        const opponent = queue.shift();
+    }
+    if (isQueued(socket.id))
+        return;
+    const queue = queues[queueName];
+    // Never match a socket with itself, and never match the same ranked player
+    // (e.g. two tabs) against themselves — that would let someone farm ELO.
+    const idx = queue.findIndex((e) => e.socketId !== socket.id && !(queueName === 'ranked' && e.playerId === entry.playerId));
+    if (idx !== -1) {
+        const [opponent] = queue.splice(idx, 1);
         cancelQueueTimeout(opponent.socketId);
-        createMatchedRoom(io, opponent, entry, ranked);
+        metrics_1.matchmakingWaitSeconds.observe({ queue: queueName }, (Date.now() - opponent.joinedAt) / 1000);
+        updateQueueGauges();
+        createMatchedRoom(io, opponent, entry, queueName);
+        return;
     }
-    else {
-        queue.push(entry);
-        socket.emit('queue_joined', { position: queue.length });
-        const timeout = setTimeout(() => {
-            if (!socketRoomMap.has(socket.id)) {
-                removeFromQueue(queue, socket.id);
-                queueTimeouts.delete(socket.id);
-                socket.emit('queue_timeout');
-            }
-        }, 60000);
-        queueTimeouts.set(socket.id, timeout);
-        socket.once('leave_queue', () => {
-            cancelQueueTimeout(socket.id);
-            removeFromQueue(queue, socket.id);
-            socket.emit('queue_left');
-        });
-    }
+    queue.push(entry);
+    updateQueueGauges();
+    socket.emit('queue_joined', { position: queue.length });
+    const timeout = setTimeout(() => {
+        queueTimeouts.delete(socket.id);
+        if (removeFromQueues(socket.id)) {
+            metrics_1.matchmakingTimeoutsTotal.inc({ queue: queueName });
+            socket.emit('queue_timeout');
+        }
+    }, exports.QUEUE_TIMEOUT_MS);
+    queueTimeouts.set(socket.id, timeout);
 }
 function registerGameSocket(io) {
     io.on('connection', (socket) => {
-        socket.on('create_room', ({ name } = {}) => {
+        socket.on('create_room', ({ name, symbol } = {}) => {
+            if (socketRoomMap.has(socket.id) || isQueued(socket.id)) {
+                socket.emit('error', 'Você já está em uma partida.');
+                return;
+            }
             const code = generateRoomCode();
-            const room = {
-                code,
-                players: [{ socketId: socket.id, symbol: 'X', name: name?.trim() || 'Jogador 1' }],
-                state: (0, gameLogic_1.createInitialState)(),
-                startedAt: Date.now(),
-                moves: [],
-                rematchVotes: new Set(),
-                ranked: false,
-            };
-            rooms.set(code, room);
-            metrics_1.activeGameRooms.inc();
+            createRoom(code, [{ socketId: socket.id, symbol: cleanSymbol(symbol), name: cleanName(name, 'Jogador 1') }], 'online');
             socket.join(code);
             socketRoomMap.set(socket.id, code);
             socket.emit('room_created', code);
         });
-        socket.on('join_room', ({ code, name }) => {
-            const upperCode = code?.toUpperCase();
+        socket.on('join_room', ({ code, name } = {}) => {
+            const upperCode = typeof code === 'string' ? code.trim().toUpperCase() : '';
             const room = rooms.get(upperCode);
-            if (!room) {
+            if (!room || room.mode !== 'online') {
                 socket.emit('error', 'Sala não encontrada.');
+                return;
+            }
+            if (room.players.some((p) => p.socketId === socket.id)) {
+                socket.emit('error', 'Você já está nesta sala.');
                 return;
             }
             if (room.players.length >= 2) {
                 socket.emit('error', 'Sala cheia.');
                 return;
             }
-            const joinerName = name?.trim() || 'Jogador 2';
-            room.players.push({ socketId: socket.id, symbol: 'O', name: joinerName });
+            if (socketRoomMap.has(socket.id) || isQueued(socket.id)) {
+                socket.emit('error', 'Você já está em uma partida.');
+                return;
+            }
+            const joinerSymbol = room.players[0].symbol === 'X' ? 'O' : 'X';
+            room.players.push({ socketId: socket.id, symbol: joinerSymbol, name: cleanName(name, 'Jogador 2') });
+            room.startedAt = Date.now();
             socket.join(upperCode);
             socketRoomMap.set(socket.id, upperCode);
-            io.to(room.players[0].socketId).emit('opponent_joined', { opponentName: joinerName });
-            io.to(room.players[0].socketId).emit('game_start', { symbol: 'X', opponentName: joinerName });
-            socket.emit('game_start', { symbol: 'O', opponentName: room.players[0].name });
             metrics_1.gamesStartedTotal.inc({ mode: 'online' });
-            io.to(upperCode).emit('game_update', room.state);
+            emitGameStart(io, room);
         });
         socket.on('make_move', (index) => {
+            if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index > 8) {
+                socket.emit('error', 'Movimento inválido.');
+                return;
+            }
             const currentRoom = socketRoomMap.get(socket.id);
             if (!currentRoom)
                 return;
             const room = rooms.get(currentRoom);
-            if (!room)
+            if (!room || room.players.length < 2)
                 return;
             const player = room.players.find((p) => p.socketId === socket.id);
             if (!player)
@@ -204,14 +274,8 @@ function registerGameSocket(io) {
             room.moves.push(index);
             io.to(currentRoom).emit('game_update', newState);
             if (newState.winner) {
-                const durationSeconds = Math.round((Date.now() - room.startedAt) / 1000);
-                const mode = room.ranked ? 'ranked' : 'online';
-                metrics_1.gamesWonTotal.inc({ mode, winner: newState.winner });
-                GameRecord_1.GameRecord.create({ mode, winner: newState.winner, moves: room.moves, durationSeconds }).catch(console.error);
-                if (room.ranked) {
-                    updateRankedElo(io, room, newState.winner).catch(console.error);
-                }
                 room.rematchVotes = new Set();
+                recordFinishedGame(io, room, newState.winner, false);
             }
         });
         socket.on('request_rematch', () => {
@@ -219,7 +283,9 @@ function registerGameSocket(io) {
             if (!currentRoom)
                 return;
             const room = rooms.get(currentRoom);
-            if (!room || !room.state.winner)
+            if (!room || !room.state.winner || room.players.length < 2)
+                return;
+            if (room.rematchVotes.has(socket.id))
                 return;
             room.rematchVotes.add(socket.id);
             if (room.rematchVotes.size === 1) {
@@ -229,59 +295,56 @@ function registerGameSocket(io) {
                         room.rematchVotes.clear();
                         io.to(currentRoom).emit('rematch_expired');
                     }
-                }, 30000);
+                }, REMATCH_TIMEOUT_MS);
                 return;
             }
-            if (room.rematchVotes.size >= 2) {
-                clearTimeout(room.rematchTimeout);
-                room.state = (0, gameLogic_1.createInitialState)();
-                room.moves = [];
-                room.startedAt = Date.now();
-                room.rematchVotes = new Set();
-                for (const p of room.players) {
-                    const opponent = room.players.find((o) => o.socketId !== p.socketId);
-                    io.to(p.socketId).emit('game_start', { symbol: p.symbol, opponentName: opponent?.name });
-                }
-                metrics_1.gamesStartedTotal.inc({ mode: room.ranked ? 'ranked' : 'online' });
-                io.to(currentRoom).emit('game_update', room.state);
-            }
+            clearTimeout(room.rematchTimeout);
+            // Swap symbols so the player who went second now starts (X always moves first).
+            for (const p of room.players)
+                p.symbol = p.symbol === 'X' ? 'O' : 'X';
+            room.state = (0, gameLogic_1.createInitialState)();
+            room.moves = [];
+            room.startedAt = Date.now();
+            room.rematchVotes = new Set();
+            metrics_1.rematchesTotal.inc({ mode: room.mode });
+            metrics_1.gamesStartedTotal.inc({ mode: room.mode });
+            emitGameStart(io, room);
         });
         socket.on('join_queue', ({ name, symbol } = {}) => {
-            joinQueue(socket, io, matchmakingQueue, {
+            joinQueue(socket, io, 'quickmatch', {
                 socketId: socket.id,
-                name: name?.trim() || 'Jogador',
-                preferredSymbol: symbol ?? 'X',
-            }, false);
+                name: cleanName(name, 'Jogador'),
+                preferredSymbol: cleanSymbol(symbol),
+                joinedAt: Date.now(),
+            });
         });
         socket.on('join_ranked_queue', ({ name, symbol, playerId } = {}) => {
-            joinQueue(socket, io, rankedQueue, {
+            if (typeof playerId !== 'string' || !PLAYER_ID_RE.test(playerId)) {
+                socket.emit('error', 'Identificador de jogador inválido. Recarregue a página.');
+                return;
+            }
+            joinQueue(socket, io, 'ranked', {
                 socketId: socket.id,
-                name: name?.trim() || 'Jogador',
-                preferredSymbol: symbol ?? 'X',
+                name: cleanName(name, 'Jogador'),
+                preferredSymbol: cleanSymbol(symbol),
                 playerId,
-            }, true);
+                joinedAt: Date.now(),
+            });
+        });
+        socket.on('leave_queue', () => {
+            if (removeFromQueues(socket.id))
+                socket.emit('queue_left');
         });
         socket.on('leave_room', () => {
             const currentRoom = socketRoomMap.get(socket.id);
-            if (!currentRoom)
-                return;
-            const room = rooms.get(currentRoom);
-            if (room)
-                handleLeaveRoom(io, socket, currentRoom, !!room.state.winner);
-            socket.leave(currentRoom);
-            socketRoomMap.delete(socket.id);
+            if (currentRoom)
+                handleLeaveRoom(io, socket, currentRoom);
         });
         socket.on('disconnect', () => {
-            cancelQueueTimeout(socket.id);
-            removeFromQueue(matchmakingQueue, socket.id);
-            removeFromQueue(rankedQueue, socket.id);
+            removeFromQueues(socket.id);
             const currentRoom = socketRoomMap.get(socket.id);
-            if (!currentRoom)
-                return;
-            const room = rooms.get(currentRoom);
-            if (room)
-                handleLeaveRoom(io, socket, currentRoom, !!room.state.winner);
-            socketRoomMap.delete(socket.id);
+            if (currentRoom)
+                handleLeaveRoom(io, socket, currentRoom);
         });
     });
 }

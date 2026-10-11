@@ -33,14 +33,18 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.GameRecord = void 0;
+exports.GameRecord = exports.DIFFICULTIES = exports.GAME_MODES = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
+exports.GAME_MODES = ['local', 'cpu', 'online', 'quickmatch', 'ranked'];
+exports.DIFFICULTIES = ['easy', 'medium', 'hard', 'insane'];
 const gameRecordSchema = new mongoose_1.Schema({
-    mode: { type: String, enum: ['local', 'online', 'cpu'], required: true },
+    mode: { type: String, enum: exports.GAME_MODES, required: true },
     winner: { type: String, enum: ['X', 'O', 'none'], required: true },
     moves: { type: [Number], default: [] },
     durationSeconds: { type: Number, required: true },
-    difficulty: { type: String, enum: ['easy', 'medium', 'hard'] },
+    abandoned: { type: Boolean, default: false },
+    difficulty: { type: String, enum: exports.DIFFICULTIES },
+    humanWon: { type: Boolean },
     players: { type: [String] },
 }, { timestamps: true });
 exports.GameRecord = mongoose_1.default.model('GameRecord', gameRecordSchema);

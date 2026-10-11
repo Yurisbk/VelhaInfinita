@@ -2,15 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { usePlayer } from '../context/PlayerContext';
-
-const API_BASE = import.meta.env.VITE_API_URL ?? '';
-
-interface PlayerStats {
-  elo: number;
-  rankedWins: number;
-  rankedLosses: number;
-  name: string;
-}
+import { api, PlayerStats } from '../services/api';
 
 const modes = [
   {
@@ -26,15 +18,15 @@ const modes = [
     emoji: '⚡',
     title: 'Partida Rápida',
     desc: 'Seja pareado com um jogador aleatório',
-    color: 'from-yellow-500 to-orange-500',
-    glow: 'shadow-yellow-500/30',
+    color: 'from-emerald-600 to-teal-700',
+    glow: 'shadow-emerald-500/30',
   },
   {
     to: '/ranqueado',
     emoji: '🏆',
     title: 'Ranqueado',
     desc: 'Suba no ranking — ELO em jogo',
-    color: 'from-amber-500 to-yellow-400',
+    color: 'from-amber-600 to-orange-700',
     glow: 'shadow-amber-500/30',
   },
   {
@@ -69,22 +61,20 @@ export default function Home() {
   const [stats, setStats] = useState<PlayerStats | null>(null);
 
   useEffect(() => {
-    if (!playerId) return;
-    fetch(`${API_BASE}/api/player/${playerId}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: PlayerStats | null) => { if (data) setStats(data); })
-      .catch(() => {});
+    let cancelled = false;
+    api.getPlayer(playerId).then((p) => { if (!cancelled) setStats(p); });
+    return () => { cancelled = true; };
   }, [playerId]);
 
   return (
-    <div className="min-h-[calc(100vh-60px)] flex flex-col items-center justify-center px-4 py-12">
+    <div className="flex-1 flex flex-col items-center justify-center px-4 py-12">
       <motion.div
-        className="text-center mb-12"
+        className="text-center mb-10"
         initial={{ opacity: 0, y: -30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
       >
-        <h1 className="text-5xl sm:text-6xl font-black mb-4 bg-gradient-to-r from-indigo-400 to-pink-400 bg-clip-text text-transparent">
+        <h1 className="text-4xl sm:text-6xl font-black mb-4 bg-gradient-to-r from-indigo-400 to-pink-400 bg-clip-text text-transparent">
           ♾️ Velha Infinita
         </h1>
         <p className="text-white/60 text-base sm:text-lg max-w-md mx-auto">
@@ -104,15 +94,20 @@ export default function Home() {
         animate="show"
         className="grid gap-4 w-full max-w-2xl grid-cols-1 sm:grid-cols-2"
       >
-        {modes.map((mode) => (
-          <motion.div key={mode.to} variants={item}>
+        {modes.map((mode, i) => (
+          <motion.div
+            key={mode.to}
+            variants={item}
+            // Odd number of modes: the last card spans both columns instead of sitting alone
+            className={modes.length % 2 === 1 && i === modes.length - 1 ? 'sm:col-span-2' : ''}
+          >
             <Link
               to={mode.to}
-              className={`block card bg-gradient-to-br ${mode.color} shadow-xl ${mode.glow} hover:scale-105 transition-transform duration-200 text-center`}
+              className={`flex flex-col items-center justify-center h-full card bg-gradient-to-br ${mode.color} shadow-xl ${mode.glow} hover:scale-[1.03] transition-transform duration-200 text-center`}
             >
               <div className="text-5xl mb-3">{mode.emoji}</div>
               <h2 className="font-bold text-lg mb-1">{mode.title}</h2>
-              <p className="text-white/70 text-sm">{mode.desc}</p>
+              <p className="text-white/85 text-sm">{mode.desc}</p>
             </Link>
           </motion.div>
         ))}
@@ -126,25 +121,31 @@ export default function Home() {
         className="mt-8 card max-w-md w-full"
       >
         {stats ? (
-          <div className="flex items-center justify-around text-center">
+          <Link to="/ranqueado" className="flex items-center justify-around text-center">
             <div>
-              <p className="text-2xl font-black text-yellow-400">{stats.elo}</p>
+              <p className="text-2xl font-black text-yellow-400 tabular-nums">{stats.elo}</p>
               <p className="text-white/50 text-xs mt-1">ELO</p>
             </div>
             <div className="w-px h-8 bg-white/10" />
             <div>
-              <p className="text-2xl font-black text-green-400">{stats.rankedWins}</p>
+              <p className="text-2xl font-black tabular-nums">{stats.rank ? `#${stats.rank}` : '—'}</p>
+              <p className="text-white/50 text-xs mt-1">Ranking</p>
+            </div>
+            <div className="w-px h-8 bg-white/10" />
+            <div>
+              <p className="text-2xl font-black text-green-400 tabular-nums">{stats.rankedWins}</p>
               <p className="text-white/50 text-xs mt-1">Vitórias</p>
             </div>
             <div className="w-px h-8 bg-white/10" />
             <div>
-              <p className="text-2xl font-black text-red-400">{stats.rankedLosses}</p>
+              <p className="text-2xl font-black text-red-400 tabular-nums">{stats.rankedLosses}</p>
               <p className="text-white/50 text-xs mt-1">Derrotas</p>
             </div>
-          </div>
+          </Link>
         ) : (
-          <p className="text-white/30 text-sm text-center">
-            Jogue uma partida ranqueada para ver seu ELO aqui.
+          <p className="text-white/40 text-sm text-center">
+            Jogue uma <Link to="/ranqueado" className="text-yellow-400 hover:underline">partida ranqueada</Link> para
+            ver seu ELO e posição aqui.
           </p>
         )}
       </motion.div>
